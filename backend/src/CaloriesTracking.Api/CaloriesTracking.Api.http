@@ -1,0 +1,6 @@
+@CaloriesTracking.Api_HostAddress = https://localhost:7114
+
+GET {{CaloriesTracking.Api_HostAddress}}/api/profile/default-avatars
+Accept: application/json
+
+###

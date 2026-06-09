@@ -1,0 +1,37 @@
+# Kế hoạch Tích hợp Kết nối API cho Frontend
+
+Mục tiêu: Gọi API Backend (cụ thể là `PATCH /api/profile/me`) từ ứng dụng Flutter để đồng bộ các chỉ số sức khoẻ vừa tính toán được (BMI, TDEE, Calories,...) lên Server.
+
+## Open Questions
+
+- Vì Backend hiện tại **chưa có chức năng Đăng ký/Đăng nhập (Auth)** để tạo JWT Token, nên hàm `GetCurrentUserId()` trong Controller sẽ luôn trả về `null` (nếu không có Token). Để có thể test được API ngay bây giờ, bạn có đồng ý cho mình **tạm thời hardcode Id = 1** ở trong Backend (chỉ dùng cho môi trường Test/Dev) để giả lập người dùng đang đăng nhập không?
+- Bạn có muốn mình tạo thêm một Loading Spinner (Vòng xoay chờ) trong lúc App gọi API để UX mượt mà hơn không? (Mặc định mình sẽ thêm).
+
+## Proposed Changes
+
+### 1. Flutter: Tầng Giao tiếp (Network Layer)
+- **[MODIFY] `pubspec.yaml`**: Thêm thư viện `dio` để quản lý các HTTP Requests dễ dàng, hỗ trợ tốt cho việc gửi `FormData` (ảnh đại diện).
+- **[NEW] `lib/core/network/api_client.dart`**: Khởi tạo cấu hình Dio cơ bản (BaseUrl = `http://localhost:5000/api`, Timeout,...).
+- **[NEW] `lib/features/profile/services/profile_api_service.dart`**: 
+  - Tạo service chứa hàm `updateProfile`.
+  - Hàm này sẽ gói gọn các dữ liệu `DisplayName, Height, Weight, Age, Gender, TargetCalories` vào `FormData` và bắn `PATCH` request lên Backend.
+
+### 2. Flutter: Tầng Giao diện (UI & State)
+- **[MODIFY] `lib/features/profile/screens/profile_screen.dart`**:
+  - Gắn `ProfileApiService` vào nút **Áp dụng Mục tiêu này**.
+  - Hiển thị hiệu ứng Loading khi đang chờ Server phản hồi.
+  - Hiển thị `SnackBar` báo Lỗi hoặc Thành công dựa trên kết quả trả về từ Backend.
+
+### 3. Backend: Giả lập Auth (Temporary)
+- **[MODIFY] `backend/src/CaloriesTracking.Api/Controllers/ProfileController.cs`**:
+  - Sửa hàm `GetCurrentUserId()` để trả về `1` trong môi trường Dev (hoặc gỡ bỏ thuộc tính `[Authorize]` tạm thời) để API cho phép App gọi vào mà không cần JWT Token hợp lệ.
+
+## Verification Plan
+### Automated Tests
+- Chạy `flutter pub get` để tải thư viện.
+- Chạy `dotnet build` để đảm bảo Backend vẫn hoạt động tốt.
+
+### Manual Verification
+- Bạn tiến hành nhập liệu trên màn hình Profile của Web App đang chạy.
+- Bấm "Tính Toán" -> "Áp dụng mục tiêu".
+- Kiểm tra Log của Backend và Log của Flutter Console xem HTTP Request có trả về Status Code 200 (Thành công) hay không.

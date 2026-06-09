@@ -1,0 +1,45 @@
+# Kế hoạch Triển khai Đăng nhập/Đăng ký & Cải tiến Profile
+
+Căn cứ theo yêu cầu của bạn, đây là một nâng cấp rất lớn đòi hỏi phải đụng tới cả cấu trúc Backend lẫn Frontend. Mình đã phân tích và lên danh sách các hạng mục cần thực hiện:
+
+## Open Questions
+- Bạn có muốn lưu trữ JWT Token vào bộ nhớ cục bộ (Local Storage / Shared Preferences) trên Flutter để người dùng không phải đăng nhập lại mỗi khi mở lại ứng dụng không? (Mặc định mình sẽ tích hợp sẵn cho bạn nhé).
+- Với thư viện để tải ảnh từ máy tính/điện thoại lên, mình sẽ cài đặt thêm `image_picker`. Thư viện này hỗ trợ đa nền tảng khá tốt, bạn đồng ý chứ?
+
+## Proposed Changes
+
+### 1. Tầng Backend (C# .NET)
+
+#### [NEW] Authentication Feature
+- Tạo `backend/src/CaloriesTracking.Api/Controllers/AuthController.cs`: Chứa 2 Endpoint `POST /api/auth/register` và `POST /api/auth/login`.
+- Tạo `backend/src/CaloriesTracking.Application/Services/AuthService.cs`: Chứa logic băm mật khẩu (Hashing) bằng BCrypt và tạo chuỗi JWT Token có chữ ký bảo mật.
+- Tạo các DTOs: `LoginRequest.cs`, `RegisterRequest.cs`, `AuthResponse.cs`.
+- Trong DB, `Id` của `User` đã được thiết kế sẵn là `INTEGER PRIMARY KEY AUTOINCREMENT`, nên mỗi người dùng đăng ký mới sẽ tự động được cấp ID tăng dần (1, 2, 3...) như bạn muốn.
+
+#### [MODIFY] Profile Feature
+- Sửa lại `ProfileController.cs`: **Xóa bỏ** cái `[AllowAnonymous]` và phần hardcode `ID = 1` lúc nãy đi. Trả lại thuộc tính bảo mật `[Authorize]` và hàm `GetCurrentUserId()` chuẩn để nó quét JWT Token do Frontend gửi lên.
+
+---
+
+### 2. Tầng Frontend (Flutter)
+
+#### [NEW] Authentication UI & Logic
+- **`pubspec.yaml`**: Cài thêm thư viện `shared_preferences` (để lưu Token) và `image_picker` (để chọn ảnh upload).
+- **`lib/features/auth/...`**: Xây dựng màn hình `LoginScreen` và `RegisterScreen` theo đúng phong cách Bento Box Minimalist siêu đẹp.
+- **`lib/core/network/api_client.dart`**: Thêm một `Interceptor` để tự động chèn header `Authorization: Bearer <Token>` vào mọi Request gửi đi.
+- **`lib/features/auth/providers/auth_provider.dart`**: Quản lý trạng thái Đăng nhập/Đăng xuất toàn cục. App sẽ tự động đá ra màn Login nếu chưa có Token.
+
+#### [MODIFY] Profile Redesign
+- **`lib/features/profile/screens/profile_screen.dart`**:
+  - **Avatar**: Ở trên cùng màn hình sẽ là một `CircleAvatar` hiển thị ảnh đại diện. Khi ấn vào, một Modal hiện lên cho phép: 
+    1. Tải ảnh từ thư viện thiết bị (`image_picker`).
+    2. Chọn 1 trong 10 ảnh ngẫu nhiên (gọi API `GET /api/profile/default-avatars` mà bạn của bạn đã làm).
+  - **Tên hiển thị (DisplayName)**: Một ô Input để người dùng thay đổi tên tùy thích. (Lưu ý: Tên đăng nhập / Username chỉ dùng lúc Login và không được phép sửa ở đây).
+  - **Cập nhật Service**: Sửa đổi `profile_api_service.dart` để gửi dữ liệu file ảnh chuẩn dạng `MultipartFile` lên Server.
+
+## Verification Plan
+### Automated Tests
+- Build lại .NET Backend (`dotnet build`) để đảm bảo các Logic Auth và Token Controller chạy mượt.
+- Tải package Flutter (`flutter pub get`) đảm bảo `image_picker` không xung đột thư viện cũ.
+### Manual Verification
+- Thực hiện Đăng ký 1 tài khoản mới -> Đăng nhập bằng tài khoản đó -> Vào Profile đổi Tên, tải 1 tấm ảnh lên -> Khởi động lại App xem Token có tự lưu không và dữ liệu có khớp không.
