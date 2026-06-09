@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../app/theme.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/calculator_utils.dart';
 import '../services/profile_api_service.dart';
@@ -32,7 +33,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int? _recommendedCalories;
   bool _isLoading = false;
 
-  String _displayName = 'Người Dùng';
+  String _username = 'Người Dùng';
   String? _avatarUrl;
   XFile? _avatarFile;
 
@@ -45,15 +46,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadProfile() async {
     setState(() => _isLoading = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedActivity = prefs.getString('activityLevel');
+      final savedGoal = prefs.getString('weightGoal');
+      
       final profile = await profileApiService.getProfile();
       if (profile != null && mounted) {
         setState(() {
-          _displayName = profile['displayName'] ?? _displayName;
+          _username = profile['username'] ?? _username;
           _avatarUrl = profile['avatarUrl'];
           _age = profile['age'] ?? _age;
           _weight = (profile['weight'] as num?)?.toDouble() ?? _weight;
           _heightCm = (profile['height'] as num?)?.toDouble() ?? _heightCm;
           _gender = (profile['gender'] == 'Female') ? Gender.female : Gender.male;
+          
+          if (savedActivity != null) {
+            _activityLevel = ActivityLevel.values.firstWhere((e) => e.toString() == savedActivity, orElse: () => _activityLevel);
+          }
+          if (savedGoal != null) {
+            _weightGoal = WeightGoal.values.firstWhere((e) => e.toString() == savedGoal, orElse: () => _weightGoal);
+          }
         });
       }
     } catch (e) {
@@ -98,8 +110,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (_recommendedCalories != null) {
       setState(() => _isLoading = true);
       try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('activityLevel', _activityLevel.toString());
+        await prefs.setString('weightGoal', _weightGoal.toString());
+
         final result = await profileApiService.updateProfile(
-          displayName: _displayName,
+          displayName: _username,
           height: _heightCm,
           weight: _weight,
           age: _age,
@@ -114,17 +130,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
              _avatarFile = null;
           });
           ref.read(dailyGoalProvider.notifier).updateGoal(_recommendedCalories!);
-          ScaffoldMessenger.of(context).showSnackBar(
+          await ref.refresh(dailyDiaryProvider.future);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 'Đã đồng bộ lên Server & cập nhật mục tiêu: $_recommendedCalories kcal!',
                 style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
               ),
               backgroundColor: AppTheme.primary,
-              behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
           );
+          }
         } else if (mounted) {
           throw Exception('Không nhận được phản hồi từ Server');
         }
@@ -247,11 +265,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   .animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
 
               TextFormField(
-                initialValue: _displayName,
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: AppTheme.onBackground),
-                decoration: const InputDecoration(labelText: 'Tên hiển thị'),
-                onChanged: (v) => _displayName = v,
-                validator: (v) => (v == null || v.isEmpty) ? 'Bắt buộc' : null,
+                key: ValueKey(_username),
+                initialValue: _username,
+                readOnly: true,
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.grey),
+                decoration: InputDecoration(
+                  labelText: 'Tên đăng nhập',
+                  filled: true,
+                  fillColor: AppTheme.surfaceVariant.withAlpha(100),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
               ).animate().fadeIn(delay: 50.ms).slideY(begin: 0.1, end: 0),
               
               const SizedBox(height: 16),
@@ -372,6 +398,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildNumberInput({required String label, required String initialValue, required void Function(String?) onSaved}) {
     return TextFormField(
+      key: ValueKey(initialValue),
       initialValue: initialValue,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: AppTheme.onBackground),
@@ -385,7 +412,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildDropdown<T>({required String label, required T value, required List<DropdownMenuItem<T>> items, required void Function(T?) onChanged}) {
     return DropdownButtonFormField<T>(
-      initialValue: value,
+      value: value,
       style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: AppTheme.onBackground, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,

@@ -27,11 +27,11 @@ class ProfileApiService {
     try {
       final mapData = <String, dynamic>{
         'DisplayName': displayName,
-        'Height': height,
-        'Weight': weight,
-        'Age': age,
+        'Height': height.toInt().toString(),
+        'Weight': weight.toInt().toString(),
+        'Age': age.toString(),
         'Gender': gender,
-        'TargetCalories': targetCalories,
+        'TargetCalories': targetCalories.toString(),
       };
 
       if (defaultAvatarUrl != null) {
