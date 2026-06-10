@@ -2,10 +2,6 @@ using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 
-using CaloriesTracking.Application.Abstractions;
-using CaloriesTracking.Application.Services;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace CaloriesTracking.Application;
 
 public static class DependencyInjection

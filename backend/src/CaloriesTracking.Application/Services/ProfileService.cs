@@ -12,7 +12,13 @@ public sealed class ProfileService : IProfileService
     {
         ".jpg",
         ".jpeg",
-        ".png"
+        ".png",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tiff",
+        ".svg",
+        ".ico"
     };
 
     private readonly IAvatarStorageService _avatarStorageService;
@@ -23,7 +29,6 @@ public sealed class ProfileService : IProfileService
         _userRepository = userRepository;
         _avatarStorageService = avatarStorageService;
     }
-
     public async Task<ProfileResponse> GetProfileAsync(int userId, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
@@ -32,19 +37,7 @@ public sealed class ProfileService : IProfileService
             throw new KeyNotFoundException($"User with id '{userId}' was not found.");
         }
 
-        return new ProfileResponse
-        {
-            Id = user.Id,
-            Username = user.Username,
-            Email = user.Email,
-            DisplayName = user.DisplayName,
-            AvatarUrl = user.AvatarUrl,
-            Height = user.Height,
-            Weight = user.Weight,
-            Age = user.Age,
-            Gender = user.Gender,
-            TargetCalories = user.TargetCalories
-        };
+        return MapToResponse(user);
     }
 
     public async Task<ProfileResponse> UpdateProfileAsync(
@@ -70,7 +63,7 @@ public sealed class ProfileService : IProfileService
         }
 
         user.DisplayName = request.DisplayName.Trim();
-
+                                
         if (request.Height.HasValue)
         {
             if (request.Height.Value <= 0) throw new ArgumentException("Height must be positive.", nameof(request.Height));
