@@ -8,7 +8,7 @@ import '../../../shared/utils/constants.dart';
 
 class GeminiVisionService {
   static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
   static const String _systemPrompt = '''
 Bạn là chuyên gia dinh dưỡng người Việt Nam. Hãy phân tích ảnh thức ăn và trả về JSON.
