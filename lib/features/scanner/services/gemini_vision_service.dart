@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cross_file/cross_file.dart';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img; // Thêm thư viện nén ảnh
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../models/food_analysis_result.dart';
 import '../../../shared/utils/constants.dart';
@@ -45,9 +46,23 @@ Quy tắc:
     String imagePath, {
     int maxRetries = 3,
   }) async {
-    final imageBytes = await XFile(imagePath).readAsBytes();
+    final originalBytes = await XFile(imagePath).readAsBytes();
+    
+    // Nén ảnh khẩn cấp để tránh lỗi Timeout (quá 60s)
+    Uint8List imageBytes = originalBytes;
+    try {
+      final decodedImage = img.decodeImage(originalBytes);
+      if (decodedImage != null) {
+        // Ép kích thước tối đa 800px và giảm chất lượng xuống 70%
+        final resized = img.copyResize(decodedImage, width: 800);
+        imageBytes = Uint8List.fromList(img.encodeJpg(resized, quality: 70));
+      }
+    } catch (e) {
+      print('Lỗi nén ảnh: $e');
+    }
+
     final base64Image = base64Encode(imageBytes);
-    final mimeType = _getMimeType(imagePath);
+    final mimeType = 'image/jpeg';
 
     Exception? lastError;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -66,10 +81,22 @@ Quy tắc:
   }
 
   Future<FoodAnalysisResult> analyzeImageBytes(
-    Uint8List imageBytes,
+    Uint8List originalBytes,
     String imagePath, {
     int maxRetries = 3,
   }) async {
+    // Nén ảnh khẩn cấp cho Web để tránh Timeout
+    Uint8List imageBytes = originalBytes;
+    try {
+      final decodedImage = img.decodeImage(originalBytes);
+      if (decodedImage != null) {
+        final resized = img.copyResize(decodedImage, width: 800);
+        imageBytes = Uint8List.fromList(img.encodeJpg(resized, quality: 70));
+      }
+    } catch (e) {
+      print('Lỗi nén ảnh Web: $e');
+    }
+
     final base64Image = base64Encode(imageBytes);
     const mimeType = 'image/jpeg';
 
