@@ -113,7 +113,7 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
       await _cameraController?.dispose();
       _cameraController = CameraController(
         _cameras[_selectedCamera],
-        ResolutionPreset.high,
+        ResolutionPreset.medium, // Giảm từ high xuống medium để AI quét nhanh gấp 5 lần
         enableAudio: false,
       );
       await _cameraController!.initialize();
