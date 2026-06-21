@@ -4,107 +4,107 @@
 ![Dart](https://img.shields.io/badge/dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white)
 ![Gemini AI](https://img.shields.io/badge/Gemini_AI-%238E75B2.svg?style=for-the-badge&logo=google&logoColor=white)
 
-Ứng dụng Theo dõi Calo thông minh sử dụng **Google Gemini Vision AI** để tự động nhận diện và phân tích lượng dinh dưỡng từ hình ảnh thức ăn của bạn. 
+A smart Calorie Tracking app that uses **Google Gemini Vision AI** to automatically detect and analyze the nutritional content of your food from a photo.
 
-Dự án được xây dựng trên nền tảng **Flutter**, hỗ trợ đa nền tảng (Web, Android, iOS) và áp dụng phương pháp luận **Spec-Driven Development (SDD)** chuyên nghiệp.
-
----
-
-## ✨ Tính Năng Nổi Bật (Key Features)
-
-- 📸 **Quét Thức Ăn Bằng Camera/Thư Viện:** Chụp ảnh bữa ăn của bạn hoặc tải ảnh lên từ điện thoại để AI tự động phân tích.
-- 🤖 **Tích Hợp Google Gemini AI:** Phân tích cực kỳ chính xác số Calo, Protein, Carbs, và Fat của từng món ăn có trong hình.
-- 📊 **Dashboard & Diary:** Theo dõi tổng lượng calo đã nạp trong ngày (Home) và xem lại lịch sử các bữa ăn (Diary).
-- 🌐 **Hỗ Trợ Đa Nền Tảng:** Chạy mượt mà trên Web (truy cập qua link HTTPS), thiết bị Android (file `.apk`).
-- 🚀 **CI/CD Tự Động:** Được thiết lập GitHub Actions tự động build và deploy lên GitHub Pages mỗi khi có mã nguồn mới.
+The project is built on **Flutter**, supports multiple platforms (Web, Android, iOS), and follows a professional **Spec-Driven Development (SDD)** methodology.
 
 ---
 
-## 🛠 Công Nghệ Sử Dụng (Tech Stack)
+## ✨ Key Features
 
-Dự án sử dụng các thư viện và kỹ thuật hiện đại nhất của hệ sinh thái Flutter:
+- 📸 **Scan Food via Camera/Gallery:** Take a photo of your meal or upload one from your phone for the AI to automatically analyze.
+- 🤖 **Google Gemini AI Integration:** Highly accurate analysis of Calories, Protein, Carbs, and Fat for each food item in the image.
+- 📊 **Dashboard & Diary:** Track total calories consumed for the day (Home) and review your meal history (Diary).
+- 🌐 **Cross-Platform Support:** Runs smoothly on Web (accessible via HTTPS link) and Android devices (`.apk` file).
+- 🚀 **Automated CI/CD:** GitHub Actions is configured to automatically build and deploy to GitHub Pages whenever new code is pushed.
+
+---
+
+## 🛠 Tech Stack
+
+The project uses the most modern libraries and techniques in the Flutter ecosystem:
 - **Framework:** Flutter (`^3.12.0`), Dart
-- **Quản lý trạng thái (State Management):** `flutter_riverpod`
-- **Điều hướng (Routing):** `go_router`
-- **AI & Mạng (Networking):** `http` (Giao tiếp với Gemini REST API), `connectivity_plus`
-- **Xử lý Hình Ảnh:** `camera`, `image_picker`, `image`, `cross_file` (hỗ trợ đọc file an toàn trên Web)
-- **Giao Diện (UI):** `google_fonts`, `lottie` (hiệu ứng chuyển động mượt mà), `cupertino_icons`
-- **Lưu trữ Cục Bộ:** `shared_preferences`
+- **State Management:** `flutter_riverpod`
+- **Routing:** `go_router`
+- **AI & Networking:** `http` (communicates with the Gemini REST API), `connectivity_plus`
+- **Image Processing:** `camera`, `image_picker`, `image`, `cross_file` (supports safe file reading on Web)
+- **UI:** `google_fonts`, `lottie` (smooth animations), `cupertino_icons`
+- **Local Storage:** `shared_preferences`
 
 ---
 
-## 🏗 Kiến Trúc Dự Án (Architecture Structure)
+## 🏗 Project Architecture
 
-Dự án tuân thủ nguyên tắc **Feature-First Architecture** (Kiến trúc chia theo tính năng), giúp mã nguồn dễ dàng mở rộng và bảo trì:
+The project follows the **Feature-First Architecture** principle, making the codebase easy to extend and maintain:
 
 ```text
 lib/
-├── app/               # Cấu hình cốt lõi (Theme, Router config)
-├── features/          # Chứa các tính năng chính của App
-│   ├── diary/         # Tính năng Lịch sử bữa ăn
-│   ├── home/          # Tính năng Dashboard trang chủ
-│   └── scanner/       # Cốt lõi: Xử lý Camera & Tích hợp Gemini AI
-│       ├── models/    # Data class (FoodAnalysisResult...)
-│       ├── screens/   # Màn hình (CameraScannerScreen, ResultsScreen...)
-│       ├── services/  # Xử lý logic gọi API (GeminiVisionService)
-│       └── widgets/   # Các UI Component dùng chung cho tính năng này
-└── shared/            # Tiện ích dùng chung toàn App (utils, constants...)
+├── app/               # Core configuration (Theme, Router config)
+├── features/          # Contains the app's main features
+│   ├── diary/         # Meal history feature
+│   ├── home/          # Home dashboard feature
+│   └── scanner/       # Core: Camera handling & Gemini AI integration
+│       ├── models/    # Data classes (FoodAnalysisResult...)
+│       ├── screens/   # Screens (CameraScannerScreen, ResultsScreen...)
+│       ├── services/  # API call logic (GeminiVisionService)
+│       └── widgets/   # Shared UI components for this feature
+└── shared/            # App-wide shared utilities (utils, constants...)
 ```
 
 ---
 
-## 🌟 Phương Pháp Phát Triển: Spec-Driven Development (SDD)
+## 🌟 Development Methodology: Spec-Driven Development (SDD)
 
-Dự án này là minh chứng thực tế cho việc áp dụng phương pháp **Spec-Driven Development**. Sự giao tiếp giữa Front-end và AI Model không dựa trên sự ước đoán, mà dựa trên "Bản Hợp Đồng" (Specification) cố định.
+This project is a real-world demonstration of applying the **Spec-Driven Development** methodology. Communication between the Front-end and the AI Model isn't based on guesswork, but on a fixed "Contract" (Specification).
 
-- 📖 **[Đọc tài liệu lý thuyết và ứng dụng SDD của nhóm tại đây](docs/SPEC_DRIVEN_DEVELOPMENT.md)**
-- ⚙️ **[Xem Bản Đặc Tả JSON (API Spec) tại đây](docs/API_SPEC.md)**
+- 📖 **[Read the team's SDD theory and application documentation here](docs/SPEC_DRIVEN_DEVELOPMENT.md)**
+- ⚙️ **[View the JSON Specification (API Spec) here](docs/API_SPEC.md)**
 
-*Nhờ áp dụng SDD, dự án đảm bảo tính đồng nhất 100% dữ liệu đầu ra từ Gemini AI, tránh hoàn toàn các lỗi parsing JSON hay Crash App.*
+*Thanks to applying SDD, the project guarantees 100% consistency in the output data from Gemini AI, completely avoiding JSON parsing errors or app crashes.*
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt (Getting Started)
+## 🚀 Getting Started
 
-### Yêu Cầu Hệ Thống
-- Đã cài đặt [Flutter SDK](https://docs.flutter.dev/get-started/install) (phiên bản 3.12.0 trở lên).
-- Có tài khoản Google AI Studio để lấy API Key.
+### System Requirements
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) installed (version 3.12.0 or later).
+- A Google AI Studio account to obtain an API Key.
 
-### Bước 1: Clone dự án về máy
+### Step 1: Clone the project
 ```bash
 git clone https://github.com/trangkhanh-ai/Calories-Tracking-App.git
 cd Calories-Tracking-App
 flutter pub get
 ```
 
-### Bước 2: Cấu hình API Key (BẮT BUỘC)
-Do vấn đề bảo mật, mã API Key của Gemini không được đẩy lên GitHub. Bạn cần thiết lập thủ công trên máy của mình:
-1. Đi tới thư mục `lib/shared/utils/`.
-2. Tạo một file mới tên là `constants.dart` (hoặc sao chép từ file `constants.example.dart` nếu có).
-3. Thêm đoạn code sau vào file vừa tạo và điền API Key của bạn:
+### Step 2: Configure the API Key (REQUIRED)
+For security reasons, the Gemini API Key is not pushed to GitHub. You need to set it up manually on your machine:
+1. Navigate to the `lib/shared/utils/` folder.
+2. Create a new file named `constants.dart` (or copy it from `constants.example.dart` if available).
+3. Add the following code to the newly created file and fill in your API Key:
 ```dart
 class AppConstants {
-  static const String geminiApiKey = 'ĐIỀN_API_KEY_CỦA_BẠN_VÀO_ĐÂY';
+  static const String geminiApiKey = 'ENTER_YOUR_API_KEY_HERE';
 }
 ```
 
-### Bước 3: Chạy ứng dụng
-- **Chạy trên Trình Duyệt Web (Khuyên dùng để test):**
+### Step 3: Run the app
+- **Run in a Web Browser (recommended for testing):**
   ```bash
   flutter run -d chrome
   ```
-- **Chạy trên Máy Ảo / Thiết bị Android thật:**
+- **Run on an Emulator / a real Android device:**
   ```bash
   flutter run
   ```
 
 ---
 
-## 📱 Triển Khai iOS (Apple Devices)
+## 📱 iOS Deployment (Apple Devices)
 
-Dự án đã được cấu hình đầy đủ `Info.plist` (cấp quyền Camera, Photo Library, Microphone) và iOS Deployment Target (>=13.0). 
-Tuy nhiên, để tạo file ứng dụng trên iOS, bắt buộc bạn phải sử dụng máy tính macOS (MacBook/Mac Mini) có cài đặt Xcode. Các thiết bị Windows không thể biên dịch mã nguồn iOS.
+The project has been fully configured with `Info.plist` (Camera, Photo Library, Microphone permissions) and an iOS Deployment Target of >=13.0.
+However, to build the app for iOS, you must use a macOS computer (MacBook/Mac Mini) with Xcode installed. Windows machines cannot compile iOS source code.
 
-## 🔗 Liên Kết Triển Khai Thực Tế (Live Demo)
-Nếu GitHub Pages đã được thiết lập thành công, bạn có thể trải nghiệm ứng dụng trực tiếp trên bất kỳ trình duyệt di động nào qua đường dẫn:
+## 🔗 Live Demo Link
+If GitHub Pages has been set up successfully, you can try the app live on any mobile browser via the link:
 👉 `https://trangkhanh-ai.github.io/Calories-Tracking-App/`
