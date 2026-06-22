@@ -13,13 +13,40 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final saved = await ref.read(authProvider.notifier).loadSavedCredentials();
+    if (saved != null && mounted) {
+      setState(() {
+        _usernameController.text = saved['username']!;
+        _passwordController.text = saved['password']!;
+        _rememberMe = true;
+      });
+    }
+  }
 
   void _login() async {
+    final username = _usernameController.text;
+    final password = _passwordController.text;
+
     final success = await ref.read(authProvider.notifier).login(
-          _usernameController.text,
-          _passwordController.text,
+          username,
+          password,
         );
     if (success) {
+      // Lưu hoặc xóa thông tin đăng nhập tùy theo checkbox
+      if (_rememberMe) {
+        await ref.read(authProvider.notifier).saveCredentials(username, password);
+      } else {
+        await ref.read(authProvider.notifier).clearSavedCredentials();
+      }
       if (mounted) context.go('/');
     } else {
       final error = ref.read(authProvider).error;
@@ -84,7 +111,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     fillColor: const Color(0xFFF8F9FA),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
+                // ─── Checkbox Nhớ tài khoản ─────────────────────────
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        onChanged: (value) => setState(() => _rememberMe = value ?? false),
+                        activeColor: const Color(0xFF2ECC71),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => setState(() => _rememberMe = !_rememberMe),
+                      child: const Text(
+                        'Nhớ tài khoản',
+                        style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: authState.isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(

@@ -90,4 +90,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await prefs.remove('jwt_token');
     state = AuthState();
   }
+
+  // ─── Remember Me ──────────────────────────────────────────────────────────
+
+  /// Lưu tên đăng nhập + mật khẩu vào bộ nhớ cục bộ
+  Future<void> saveCredentials(String username, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_username', username);
+    await prefs.setString('saved_password', password);
+  }
+
+  /// Đọc tên đăng nhập + mật khẩu đã lưu (trả về null nếu chưa lưu)
+  Future<Map<String, String>?> loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('saved_username');
+    final password = prefs.getString('saved_password');
+    if (username != null && password != null) {
+      return {'username': username, 'password': password};
+    }
+    return null;
+  }
+
+  /// Xóa dữ liệu đăng nhập đã lưu
+  Future<void> clearSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('saved_username');
+    await prefs.remove('saved_password');
+  }
 }
