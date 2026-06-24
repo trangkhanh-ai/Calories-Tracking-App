@@ -10,9 +10,9 @@ public static class DatabaseSeeder
 {
     public static async Task SeedUsdaFoodsAsync(ApplicationDbContext dbContext, string seedDataFolderPath)
     {
-        if (await dbContext.Foods.AnyAsync())
+        if (await dbContext.Foods.AnyAsync(f => f.FdcId != null))
         {
-            return; // Already seeded
+            return; // Already seeded USDA data
         }
 
         var csvFilePath = Path.Combine(seedDataFolderPath, "usda_calorie_dataset.csv");
@@ -35,6 +35,9 @@ public static class DatabaseSeeder
         await csv.ReadAsync();
         csv.ReadHeader();
 
+        int batchSize = 10000;
+        int count = 0;
+
         while (await csv.ReadAsync())
         {
             var food = new Food
@@ -51,9 +54,24 @@ public static class DatabaseSeeder
                 Sodium = csv.GetField<decimal?>("sodium_mg_100g")
             };
             records.Add(food);
+            count++;
+
+            if (records.Count >= batchSize)
+            {
+                await dbContext.Foods.AddRangeAsync(records);
+                await dbContext.SaveChangesAsync();
+                dbContext.ChangeTracker.Clear();
+                records.Clear();
+                Console.WriteLine($"Seeded {count} foods...");
+            }
         }
 
-        await dbContext.Foods.AddRangeAsync(records);
-        await dbContext.SaveChangesAsync();
+        if (records.Count > 0)
+        {
+            await dbContext.Foods.AddRangeAsync(records);
+            await dbContext.SaveChangesAsync();
+            dbContext.ChangeTracker.Clear();
+            Console.WriteLine($"Finished seeding {count} foods.");
+        }
     }
 }

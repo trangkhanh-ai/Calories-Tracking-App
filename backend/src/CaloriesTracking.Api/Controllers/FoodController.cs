@@ -8,7 +8,7 @@ namespace CaloriesTracking.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+// [Authorize]
 public class FoodController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
@@ -24,6 +24,12 @@ public class FoodController : ControllerBase
         if (string.IsNullOrWhiteSpace(query))
         {
             var popularFoods = await _dbContext.Foods
+                .Take(limit * 3)
+                .ToListAsync();
+
+            var uniquePopularFoods = popularFoods
+                .GroupBy(f => f.Name.ToLower())
+                .Select(g => g.First())
                 .Take(limit)
                 .Select(f => new FoodNutritionDto
                 {
@@ -38,9 +44,9 @@ public class FoodController : ControllerBase
                     Fiber = f.Fiber,
                     Sodium = f.Sodium
                 })
-                .ToListAsync();
+                .ToList();
 
-            return Ok(popularFoods);
+            return Ok(uniquePopularFoods);
         }
 
         var normalizedQuery = query.ToLower().Trim();
@@ -51,6 +57,8 @@ public class FoodController : ControllerBase
             .ToListAsync();
 
         var matches = matchesDb
+            .GroupBy(f => f.Name.ToLower())
+            .Select(g => g.First())
             .OrderBy(f => f.Name.ToLower().StartsWith(normalizedQuery) ? 0 : 1)
             .ThenBy(f => f.Name)
             .Take(limit)
