@@ -19,7 +19,7 @@ public class FoodController : ControllerBase
     }
 
     [HttpGet("search")]
-    public async Task<IActionResult> SearchFoods([FromQuery] string query, [FromQuery] int limit = 8)
+    public async Task<IActionResult> SearchFoods([FromQuery] string? query, [FromQuery] int limit = 8)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -45,8 +45,12 @@ public class FoodController : ControllerBase
 
         var normalizedQuery = query.ToLower().Trim();
 
-        var matches = await _dbContext.Foods
-            .Where(f => f.Name.ToLower().Contains(normalizedQuery))
+        var matchesDb = await _dbContext.Foods
+            .Where(f => EF.Functions.Like(f.Name, $"%{normalizedQuery}%"))
+            .Take(limit * 3)
+            .ToListAsync();
+
+        var matches = matchesDb
             .OrderBy(f => f.Name.ToLower().StartsWith(normalizedQuery) ? 0 : 1)
             .ThenBy(f => f.Name)
             .Take(limit)
@@ -63,7 +67,7 @@ public class FoodController : ControllerBase
                 Fiber = f.Fiber,
                 Sodium = f.Sodium
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(matches);
     }
