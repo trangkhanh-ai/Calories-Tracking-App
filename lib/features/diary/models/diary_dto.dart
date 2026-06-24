@@ -46,16 +46,45 @@ class DailyDiaryDto {
     required this.snacks,
   });
 
-  factory DailyDiaryDto.fromJson(Map<String, dynamic> json) {
+  factory DailyDiaryDto.empty({required DateTime date, double targetCalories = 2000}) {
     return DailyDiaryDto(
-      date: DateTime.parse(json['date']),
-      totalCaloriesConsumed: (json['totalCaloriesConsumed'] as num).toDouble(),
-      targetCalories: (json['targetCalories'] as num).toDouble(),
-      breakfast: (json['breakfast'] as List).map((e) => MealItemDto.fromJson(e)).toList(),
-      lunch: (json['lunch'] as List).map((e) => MealItemDto.fromJson(e)).toList(),
-      dinner: (json['dinner'] as List).map((e) => MealItemDto.fromJson(e)).toList(),
-      snacks: (json['snacks'] as List).map((e) => MealItemDto.fromJson(e)).toList(),
+      date: date,
+      totalCaloriesConsumed: 0,
+      targetCalories: targetCalories,
+      breakfast: const [],
+      lunch: const [],
+      dinner: const [],
+      snacks: const [],
     );
+  }
+
+  factory DailyDiaryDto.fromJson(Map<String, dynamic>? json, {DateTime? date}) {
+    if (json == null || json.isEmpty) {
+      return DailyDiaryDto.empty(date: date ?? DateTime.now());
+    }
+
+    final parsedDate = date ?? DateTime.tryParse(json['date']?.toString() ?? '');
+
+    return DailyDiaryDto(
+      date: parsedDate ?? DateTime.now(),
+      totalCaloriesConsumed: _readDouble(json['totalCaloriesConsumed']),
+      targetCalories: _readDouble(json['targetCalories'], fallback: 2000),
+      breakfast: _readMealList(json['breakfast']),
+      lunch: _readMealList(json['lunch']),
+      dinner: _readMealList(json['dinner']),
+      snacks: _readMealList(json['snacks']),
+    );
+  }
+
+  static double _readDouble(Object? value, {double fallback = 0}) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  static List<MealItemDto> _readMealList(Object? value) {
+    if (value is! List) return const [];
+    return value.whereType<Map<String, dynamic>>().map((e) => MealItemDto.fromJson(e)).toList();
   }
 }
 

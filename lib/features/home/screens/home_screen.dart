@@ -7,7 +7,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../diary/models/diary_dto.dart';
 import '../../../app/theme.dart';
-import '../../../shared/utils/constants.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -88,6 +87,10 @@ class HomeScreen extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.bar_chart, color: AppTheme.primary),
                       onPressed: () => context.pushNamed('stats'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.search_rounded, color: AppTheme.primary),
+                      onPressed: () => context.pushNamed('food-search'),
                     ),
                   ],
                 ),

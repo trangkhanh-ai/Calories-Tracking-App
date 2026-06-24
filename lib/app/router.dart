@@ -8,6 +8,7 @@ import '../features/profile/screens/profile_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/register_screen.dart';
 import '../features/diary/screens/stats_screen.dart';
+import '../features/food_search/screens/food_search_screen.dart';
 
 final router = GoRouter(
   initialLocation: '/login',
@@ -49,6 +50,11 @@ final router = GoRouter(
       path: '/stats',
       name: 'stats',
       builder: (context, state) => const StatsScreen(),
+    ),
+    GoRoute(
+      path: '/food-search',
+      name: 'food-search',
+      builder: (context, state) => const FoodSearchScreen(),
     ),
   ],
   errorBuilder: (context, state) => Scaffold(

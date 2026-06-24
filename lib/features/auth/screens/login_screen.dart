@@ -255,6 +255,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white))
                         : const Text('ĐĂNG NHẬP', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () => context.go('/'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: Color(0xFF2ECC71)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('BỎ QUA ĐĂNG NHẬP (tạm thời)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF2ECC71))),
+                  ),
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: () => context.go('/register'),
