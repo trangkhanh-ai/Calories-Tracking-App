@@ -21,6 +21,7 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
   List<FoodNutritionItem> _suggestions = <FoodNutritionItem>[];
   FoodNutritionItem? _selectedFood;
   bool _isLoading = true;
+  bool _isSearching = false;
   String? _errorMessage;
 
   @override
@@ -63,18 +64,21 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
 
   Future<void> _performSearch(String query) async {
     setState(() {
-      _isLoading = true;
+      _isSearching = true;
+      _errorMessage = null;
     });
     
     try {
       final results = await _service.searchFoods(query);
       setState(() {
         _suggestions = results;
+        _isSearching = false;
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
+        _isSearching = false;
         _isLoading = false;
       });
     }
@@ -98,19 +102,6 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
         builder: (context, snapshot) {
           if (_isLoading) {
             return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
-          }
-
-          if (_errorMessage != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Unable to load the food database.\n$_errorMessage',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(color: AppTheme.onSurface),
-                ),
-              ),
-            );
           }
 
           return SafeArea(
@@ -145,7 +136,20 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (_suggestions.isNotEmpty)
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Connection error: $_errorMessage',
+                        style: GoogleFonts.outfit(color: AppTheme.error, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  if (_isSearching)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+                    ),
+                  if (_suggestions.isNotEmpty && !_isSearching)
                     Text(
                       _searchController.text.trim().isEmpty
                           ? 'Popular foods'
@@ -158,9 +162,13 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
                     ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: _suggestions.isEmpty
-                        ? _buildEmptyState()
-                        : ListView.separated(
+                    child: _isSearching
+                        ? const SizedBox()
+                        : (_errorMessage != null && _suggestions.isEmpty)
+                            ? const SizedBox()
+                            : _suggestions.isEmpty
+                                ? _buildEmptyState()
+                                : ListView.separated(
                             itemCount: _suggestions.length,
                             separatorBuilder: (_, _) => const SizedBox(height: 8),
                             itemBuilder: (context, index) {

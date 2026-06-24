@@ -28,7 +28,7 @@ class FoodSearchService {
       return [];
     } catch (e) {
       print('Search API Error: $e');
-      return [];
+      rethrow;
     }
   }
 }
