@@ -43,5 +43,20 @@ class FoodNutritionItem {
     );
   }
 
+  factory FoodNutritionItem.fromJson(Map<String, dynamic> json) {
+    return FoodNutritionItem(
+      id: json['fdcId']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      sourceType: json['sourceType']?.toString() ?? 'Unknown',
+      calories: (json['calories'] as num?)?.toDouble(),
+      protein: (json['protein'] as num?)?.toDouble(),
+      carbs: (json['carbs'] as num?)?.toDouble(),
+      fat: (json['fat'] as num?)?.toDouble(),
+      sugar: (json['sugar'] as num?)?.toDouble(),
+      fiber: (json['fiber'] as num?)?.toDouble(),
+      sodium: (json['sodium'] as num?)?.toDouble(),
+    );
+  }
+
   String get caloriesLabel => calories == null ? 'N/A' : '${calories!.toStringAsFixed(0)} kcal';
 }

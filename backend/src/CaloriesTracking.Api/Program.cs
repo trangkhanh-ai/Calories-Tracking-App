@@ -74,6 +74,10 @@ await using (var scope = app.Services.CreateAsyncScope())
         });
         await dbContext.SaveChangesAsync();
     }
+
+    // Seed USDA foods
+    var seedFolder = Path.Combine(Directory.GetCurrentDirectory(), "..", "CaloriesTracking.Infrastructure", "Data", "SeedData");
+    await CaloriesTracking.Infrastructure.Data.Seeders.DatabaseSeeder.SeedUsdaFoodsAsync(dbContext, seedFolder);
 }
 
 app.UseHttpsRedirection();

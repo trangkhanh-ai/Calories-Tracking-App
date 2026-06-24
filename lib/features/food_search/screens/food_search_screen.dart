@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -15,6 +16,7 @@ class FoodSearchScreen extends StatefulWidget {
 class _FoodSearchScreenState extends State<FoodSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FoodSearchService _service = FoodSearchService.instance;
+  Timer? _debounce;
   late Future<void> _loadFuture;
   List<FoodNutritionItem> _suggestions = <FoodNutritionItem>[];
   FoodNutritionItem? _selectedFood;
@@ -27,13 +29,17 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
     _loadFuture = _loadFoods();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadFoods() async {
     try {
       await _service.loadFoods();
-      setState(() {
-        _suggestions = _service.searchFoods(_searchController.text);
-        _isLoading = false;
-      });
+      await _performSearch("");
     } catch (error) {
       setState(() {
         _errorMessage = error.toString();
@@ -43,12 +49,35 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
   }
 
   void _onSearchChanged(String value) {
-    setState(() {
-      _suggestions = _service.searchFoods(value);
-      if (value.trim().isEmpty) {
-        _selectedFood = null;
-      }
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(value);
     });
+
+    if (value.trim().isEmpty) {
+      setState(() {
+        _selectedFood = null;
+      });
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final results = await _service.searchFoods(query);
+      setState(() {
+        _suggestions = results;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
   }
 
   @override

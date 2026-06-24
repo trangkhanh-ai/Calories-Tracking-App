@@ -70,6 +70,9 @@ public sealed class ApplicationDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(200);
 
+            entity.Property(x => x.SourceType)
+                .HasMaxLength(50);
+
             entity.Property(x => x.CaloriesPer100g)
                 .HasPrecision(10, 2);
 
@@ -80,6 +83,15 @@ public sealed class ApplicationDbContext : DbContext
                 .HasPrecision(10, 2);
 
             entity.Property(x => x.Fat)
+                .HasPrecision(10, 2);
+
+            entity.Property(x => x.Sugar)
+                .HasPrecision(10, 2);
+
+            entity.Property(x => x.Fiber)
+                .HasPrecision(10, 2);
+
+            entity.Property(x => x.Sodium)
                 .HasPrecision(10, 2);
         });
 
