@@ -2,20 +2,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../app/theme.dart';
 import '../models/food_nutrition_item.dart';
 import '../services/food_search_service.dart';
+import '../../diary/services/diary_api_service.dart';
+import '../../diary/models/diary_dto.dart';
+import '../../diary/providers/diary_provider.dart';
 
-class FoodSearchScreen extends StatefulWidget {
+class FoodSearchScreen extends ConsumerStatefulWidget {
   const FoodSearchScreen({super.key});
 
   @override
-  State<FoodSearchScreen> createState() => _FoodSearchScreenState();
+  ConsumerState<FoodSearchScreen> createState() => _FoodSearchScreenState();
 }
 
-class _FoodSearchScreenState extends State<FoodSearchScreen> {
+class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FoodSearchService _service = FoodSearchService.instance;
+  final DiaryApiService _diaryService = DiaryApiService();
   Timer? _debounce;
   late Future<void> _loadFuture;
   List<FoodNutritionItem> _suggestions = <FoodNutritionItem>[];
@@ -302,7 +308,67 @@ class _FoodSearchScreenState extends State<FoodSearchScreen> {
               _NutritionChip(label: 'Sodium', value: _formatValue(food.sodium, unit: 'mg')),
             ],
           ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _showAddMealBottomSheet(food),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(
+                'Add to Diary',
+                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showAddMealBottomSheet(FoodNutritionItem food) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AddMealBottomSheet(
+        food: food,
+        onSave: (quantity, mealType, date) async {
+          Navigator.pop(context);
+          try {
+            await _diaryService.logMeal(LogMealRequest(
+              foodName: food.name,
+              caloriesPer100g: food.calories ?? 0.0,
+              quantity: quantity,
+              mealType: mealType,
+              date: date,
+            ));
+            ref.invalidate(dailyDiaryProvider);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${food.name} added to $mealType!'),
+                  backgroundColor: AppTheme.primaryDark,
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to add to diary.'),
+                  backgroundColor: AppTheme.error,
+                ),
+              );
+            }
+          }
+        },
       ),
     );
   }
@@ -330,6 +396,113 @@ class _NutritionChip extends StatelessWidget {
       child: Text(
         '$label: $value',
         style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+class _AddMealBottomSheet extends StatefulWidget {
+  final FoodNutritionItem food;
+  final Function(double quantity, String mealType, DateTime date) onSave;
+
+  const _AddMealBottomSheet({required this.food, required this.onSave});
+
+  @override
+  State<_AddMealBottomSheet> createState() => _AddMealBottomSheetState();
+}
+
+class _AddMealBottomSheetState extends State<_AddMealBottomSheet> {
+  final TextEditingController _qtyController = TextEditingController(text: "100");
+  String _selectedMealType = "Snack";
+  final DateTime _selectedDate = DateTime.now();
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        top: 24,
+        left: 24,
+        right: 24,
+      ),
+      decoration: const BoxDecoration(
+        color: AppTheme.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Add ${widget.food.name}',
+            style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.onBackground),
+          ),
+          const SizedBox(height: 20),
+          Text('Quantity (grams)', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _qtyController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppTheme.surface,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Meal Type', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: ['Breakfast', 'Lunch', 'Dinner', 'Snack'].map((type) {
+              final isSelected = _selectedMealType == type;
+              return ChoiceChip(
+                label: Text(type),
+                selected: isSelected,
+                onSelected: (selected) {
+                  if (selected) setState(() => _selectedMealType = type);
+                },
+                selectedColor: AppTheme.primary.withAlpha(50),
+                labelStyle: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? AppTheme.primaryDark : AppTheme.onSurface,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: isSelected ? AppTheme.primary : Colors.transparent,
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                final qty = double.tryParse(_qtyController.text) ?? 100;
+                widget.onSave(qty, _selectedMealType, _selectedDate);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              child: Text(
+                'Save to Diary',
+                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
