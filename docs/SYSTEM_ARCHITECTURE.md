@@ -280,35 +280,42 @@ sequenceDiagram
     Note over F2: Hiện danh sách món:<br/>- Tên (VN + EN)<br/>- Khẩu phần<br/>- Calories, Protein, Carbs, Fat<br/>- Độ tin cậy (confidence)
 ```
 
-### 👤 Luồng 6: Quản Lý Hồ Sơ (Profile)
+### 👤 Luồng 6: Quản Lý Hồ Sơ & Avatar Toàn Cục (Profile)
 
 ```mermaid
 sequenceDiagram
     participant U as 👤 Người dùng
-    participant F as 📱 ProfileScreen
+    participant F as 📱 UI (Home / Profile)
+    participant P as 📦 ProfileProvider
     participant A as ⚙️ ProfileController
     participant SVC as 🧠 ProfileService
     participant DB as 🗄️ SQLite
 
-    U->>F: Mở trang Profile
-    F->>A: GET /api/profile/me
+    U->>F: Mở app (Trang chủ hoặc Profile)
+    F->>P: watch(profileProvider)
+    P->>A: GET /api/profile/me
     A->>SVC: GetProfileAsync(userId)
     SVC->>DB: SELECT User WHERE Id = userId
     DB-->>SVC: User record
     SVC-->>A: ProfileResponse
-    A-->>F: JSON (name, avatar, height, weight, age, gender, targetCalories)
+    A-->>P: JSON (name, avatar, height, weight, etc.)
+    P-->>F: Cập nhật UI toàn cục (Avatar trên thanh điều hướng)
 
-    U->>F: Chỉnh sửa thông tin
-    U->>F: Nhập Weight=65, Height=170, Age=22
-    F->>A: PATCH /api/profile/me (multipart/form-data)
+    U->>F: Đổi Avatar (Chọn 1 trong 10 ảnh mặc định)
+    F->>A: GET /api/profile/default-avatars
+    A-->>F: Trả về danh sách URL ảnh mẫu
+    
+    U->>F: Nhập Weight=65, Height=170 + Chọn Avatar
+    F->>A: PATCH /api/profile/me (JSON body)
     A->>SVC: UpdateProfileAsync(userId, request)
-    SVC->>DB: UPDATE User SET Weight=65, Height=170, Age=22
+    SVC->>DB: UPDATE User SET Weight=65, AvatarUrl=...
     DB-->>SVC: OK
     SVC-->>A: Updated ProfileResponse
     A-->>F: JSON cập nhật
+    F->>P: refresh(profileProvider) -> tải lại dữ liệu mới
     F->>U: Hiện thông báo thành công
 
-    Note over F: TargetCalories được tính tự động<br/>từ BMR (Mifflin-St Jeor):<br/>BMR = 10×Weight + 6.25×Height − 5×Age ± 5/161
+    Note over F: TargetCalories được tính tự động<br/>từ BMR (Mifflin-St Jeor)
 ```
 
 ---
