@@ -21,7 +21,6 @@ class ProfileApiService {
     required int age,
     required String gender,
     required int targetCalories,
-    XFile? avatarFile,
     String? defaultAvatarUrl,
   }) async {
     try {
@@ -36,13 +35,6 @@ class ProfileApiService {
 
       if (defaultAvatarUrl != null) {
         mapData['DefaultAvatarUrl'] = defaultAvatarUrl;
-      }
-
-      if (avatarFile != null) {
-        mapData['AvatarFile'] = await MultipartFile.fromBytes(
-          await avatarFile.readAsBytes(),
-          filename: avatarFile.name,
-        );
       }
 
       final formData = FormData.fromMap(mapData);

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../diary/providers/diary_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../../diary/models/diary_dto.dart';
 import '../../../app/theme.dart';
 
@@ -14,6 +15,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final diaryAsync = ref.watch(dailyDiaryProvider);
+    final profileAsync = ref.watch(profileProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -79,9 +81,33 @@ class HomeScreen extends ConsumerWidget {
                           )
                         ],
                       ),
-                      child: IconButton(
-                        icon: const Icon(Icons.person, color: AppTheme.primary),
-                        onPressed: () => context.pushNamed('profile'),
+                      child: profileAsync.when(
+                        data: (profile) {
+                          final avatarUrl = profile?['avatarUrl'];
+                          if (avatarUrl != null && avatarUrl.toString().isNotEmpty) {
+                            return InkWell(
+                              onTap: () => context.pushNamed('profile'),
+                              customBorder: const CircleBorder(),
+                              child: CircleAvatar(
+                                radius: 24,
+                                backgroundColor: AppTheme.surfaceVariant,
+                                backgroundImage: NetworkImage(avatarUrl),
+                              ),
+                            );
+                          }
+                          return IconButton(
+                            icon: const Icon(Icons.person, color: AppTheme.primary),
+                            onPressed: () => context.pushNamed('profile'),
+                          );
+                        },
+                        loading: () => const Padding(
+                          padding: EdgeInsets.all(12.0),
+                          child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
+                        ),
+                        error: (_, __) => IconButton(
+                          icon: const Icon(Icons.person, color: AppTheme.primary),
+                          onPressed: () => context.pushNamed('profile'),
+                        ),
                       ),
                     ),
                     IconButton(

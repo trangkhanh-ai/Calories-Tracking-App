@@ -4,15 +4,15 @@ public static class ProfileDefaults
 {
     public static IReadOnlyList<string> AvatarUrls { get; } = new[]
     {
-        "https://cdn.calories-tracking.app/avatars/default-01.png",
-        "https://cdn.calories-tracking.app/avatars/default-02.png",
-        "https://cdn.calories-tracking.app/avatars/default-03.png",
-        "https://cdn.calories-tracking.app/avatars/default-04.png",
-        "https://cdn.calories-tracking.app/avatars/default-05.png",
-        "https://cdn.calories-tracking.app/avatars/default-06.png",
-        "https://cdn.calories-tracking.app/avatars/default-07.png",
-        "https://cdn.calories-tracking.app/avatars/default-08.png",
-        "https://cdn.calories-tracking.app/avatars/default-09.png",
-        "https://cdn.calories-tracking.app/avatars/default-10.png"
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Felix",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Aneka",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=George",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Bella",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Oliver",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Luna",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Leo",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Chloe",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Max",
+        "https://api.dicebear.com/9.x/avataaars/png?seed=Mia"
     };
 }

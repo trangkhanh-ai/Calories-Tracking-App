@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../app/theme.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -10,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/calculator_utils.dart';
 import '../services/profile_api_service.dart';
+import '../providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -35,7 +35,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   String _username = 'Người Dùng';
   String? _avatarUrl;
-  XFile? _avatarFile;
+  String? _selectedDefaultAvatarUrl;
 
   @override
   void initState() {
@@ -50,7 +50,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final savedActivity = prefs.getString('activityLevel');
       final savedGoal = prefs.getString('weightGoal');
       
-      final profile = await profileApiService.getProfile();
+      final profile = await ref.read(profileProvider.future);
       if (profile != null && mounted) {
         setState(() {
           _username = profile['username'] ?? _username;
@@ -75,14 +75,63 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _pickAvatar() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _avatarFile = pickedFile;
-        _avatarUrl = null; // Clear default url if local file picked
-      });
+  Future<void> _pickDefaultAvatar() async {
+    final avatars = await profileApiService.getDefaultAvatars();
+    if (avatars.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không tải được danh sách ảnh mặc định')));
+      }
+      return;
+    }
+
+    if (mounted) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (ctx) {
+          return SafeArea(
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text('Chọn ảnh đại diện', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: GridView.builder(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                      ),
+                      itemCount: avatars.length,
+                      itemBuilder: (context, index) {
+                        final avatarUrl = avatars[index];
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _avatarUrl = avatarUrl;
+                              _selectedDefaultAvatarUrl = avatarUrl;
+                            });
+                            Navigator.pop(ctx);
+                          },
+                          child: CircleAvatar(
+                            backgroundImage: NetworkImage(avatarUrl),
+                            backgroundColor: AppTheme.surfaceVariant,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      );
     }
   }
 
@@ -121,15 +170,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           age: _age,
           gender: _gender == Gender.male ? 'Male' : 'Female',
           targetCalories: _recommendedCalories!,
-          avatarFile: _avatarFile,
+          defaultAvatarUrl: _selectedDefaultAvatarUrl,
         );
 
         if (result != null && mounted) {
           setState(() {
              _avatarUrl = result['avatarUrl'];
-             _avatarFile = null;
+             _selectedDefaultAvatarUrl = null;
           });
           ref.read(dailyGoalProvider.notifier).updateGoal(_recommendedCalories!);
+          ref.read(profileProvider.notifier).refresh();
           await ref.refresh(dailyDiaryProvider.future);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -230,18 +280,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             children: [
               Center(
                 child: GestureDetector(
-                  onTap: _pickAvatar,
+                  onTap: _pickDefaultAvatar,
                   child: Stack(
                     children: [
                       CircleAvatar(
                         radius: 50,
                         backgroundColor: AppTheme.surfaceVariant,
-                        backgroundImage: _avatarFile != null 
-                            ? null // TODO: handle local file preview on web if needed, for simplicity show icon
-                            : (_avatarUrl != null ? NetworkImage(_avatarUrl!) : null),
-                        child: _avatarFile != null 
-                           ? const Icon(Icons.image, size: 40)
-                           : (_avatarUrl == null ? const Icon(Icons.person, size: 50, color: Colors.grey) : null),
+                        backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+                        child: _avatarUrl == null
+                            ? const Icon(Icons.person, size: 50, color: Colors.grey)
+                            : null,
                       ),
                       Positioned(
                         bottom: 0,
