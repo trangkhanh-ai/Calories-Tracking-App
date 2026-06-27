@@ -196,13 +196,19 @@ class _CalorieRingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: AppTheme.surface.withAlpha(220),
         borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.onBackground.withAlpha(12),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+            color: calorieColor.withAlpha(50),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
+          ),
+          BoxShadow(
+            color: AppTheme.onBackground.withAlpha(8),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -218,7 +224,7 @@ class _CalorieRingCard extends StatelessWidget {
                 SizedBox.expand(
                   child: CircularProgressIndicator(
                     value: percentage,
-                    strokeWidth: 12,
+                    strokeWidth: 14,
                     backgroundColor: AppTheme.surfaceVariant,
                     valueColor: AlwaysStoppedAnimation<Color>(calorieColor),
                     strokeCap: StrokeCap.round,
@@ -231,17 +237,19 @@ class _CalorieRingCard extends StatelessWidget {
                       '$todayCalories',
                       style: GoogleFonts.outfit(
                         color: AppTheme.onBackground,
-                        fontSize: 28,
+                        fontSize: 32,
                         fontWeight: FontWeight.w900,
-                        height: 1.1,
+                        height: 1.0,
+                        letterSpacing: -1,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       'kcal',
                       style: GoogleFonts.outfit(
                         color: AppTheme.onSurface,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -366,13 +374,17 @@ class _MealBreakdownCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _MealSlot(emoji: '🍳', label: 'Sáng', calories: bfCal.toInt())),
-              Expanded(child: _MealSlot(emoji: '🍱', label: 'Trưa', calories: lCal.toInt())),
-              Expanded(child: _MealSlot(emoji: '🍲', label: 'Tối', calories: dCal.toInt())),
-              Expanded(child: _MealSlot(emoji: '🍎', label: 'Ăn Vặt', calories: sCal.toInt())),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _MealSlot(emoji: '🍳', label: 'Sáng', calories: bfCal.toInt()),
+                _MealSlot(emoji: '🍱', label: 'Trưa', calories: lCal.toInt()),
+                _MealSlot(emoji: '🍲', label: 'Tối', calories: dCal.toInt()),
+                _MealSlot(emoji: '🍎', label: 'Vặt', calories: sCal.toInt()),
+              ],
+            ),
           ),
         ],
       ),
@@ -393,42 +405,52 @@ class _MealSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: const BoxDecoration(
-            color: AppTheme.surfaceVariant,
-            shape: BoxShape.circle,
+    return Container(
+      width: 90,
+      margin: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.background,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.onBackground.withAlpha(5),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
-          child: Text(emoji, style: const TextStyle(fontSize: 24)),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-            color: AppTheme.onSurface,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 28)),
+          const SizedBox(height: 12),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: AppTheme.onSurface,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '$calories',
-          style: GoogleFonts.outfit(
-            color: calories > 0 ? AppTheme.primaryDark : AppTheme.onSurface,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
+          const SizedBox(height: 4),
+          Text(
+            '$calories',
+            style: GoogleFonts.outfit(
+              color: calories > 0 ? AppTheme.primaryDark : AppTheme.onSurface,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-        Text(
-          'kcal',
-          style: GoogleFonts.outfit(
-            color: AppTheme.onSurface,
-            fontSize: 11,
+          Text(
+            'kcal',
+            style: GoogleFonts.outfit(
+              color: AppTheme.onSurface,
+              fontSize: 11,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -441,32 +463,34 @@ class _FoodEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.onBackground.withAlpha(5),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: AppTheme.onBackground.withAlpha(6),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: AppTheme.surfaceVariant,
-              borderRadius: BorderRadius.circular(14),
+              color: AppTheme.background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.surfaceVariant, width: 1),
             ),
             child: Center(
               child: Text(
                 _mealEmoji(entry.mealType),
-                style: const TextStyle(fontSize: 24),
+                style: const TextStyle(fontSize: 26),
               ),
             ),
           ),
@@ -479,17 +503,24 @@ class _FoodEntryTile extends StatelessWidget {
                   entry.foodName,
                   style: GoogleFonts.outfit(
                     color: AppTheme.onBackground,
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  entry.mealType,
-                  style: GoogleFonts.outfit(
-                    color: AppTheme.onSurface,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withAlpha(20),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    entry.mealType,
+                    style: GoogleFonts.outfit(
+                      color: AppTheme.primaryDark,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
