@@ -37,6 +37,8 @@ The project uses the most modern libraries and techniques in the Flutter ecosyst
 
 The project follows the **Feature-First Architecture** principle, making the codebase easy to extend and maintain:
 
+👉 **[View the detailed System Architecture and Data Flow diagrams here](docs/SYSTEM_ARCHITECTURE.md)**
+
 ```text
 lib/
 ├── app/               # Core configuration (Theme, Router config)
