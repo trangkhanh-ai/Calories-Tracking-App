@@ -81,14 +81,9 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
   }
 
   Future<void> _initCamera() async {
-    // Web: camera needs HTTPS + explicit browser grant; handle gracefully
     if (kIsWeb) {
-      try {
-        _cameras = await availableCameras();
-      } catch (_) {
-        if (mounted) setState(() => _cameraUnavailable = true);
-        return;
-      }
+      if (mounted) setState(() => _cameraUnavailable = true);
+      return;
     } else {
       final status = await Permission.camera.request();
       if (!status.isGranted) {
