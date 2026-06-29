@@ -10,7 +10,11 @@ graph TB
         UI["🎨 Giao diện người dùng<br/>(Flutter Widgets)"]
         PROV["📦 State Management<br/>(Riverpod Providers)"]
         SVC["🔌 API Services<br/>(Dio HTTP Client)"]
-        LOCAL["💾 Local Storage<br/>(SharedPreferences)"]
+        LOCAL["💾 Local Storage<br/>(Isar & SharedPreferences)"]
+    end
+
+    subgraph "🛡️ PROXY LAYER"
+        EXPRESS["🚀 Node.js Express Proxy<br/>(localhost:3000)"]
     end
 
     subgraph "☁️ EXTERNAL API"
@@ -35,7 +39,8 @@ graph TB
     PROV --> SVC
     SVC -->|"HTTP REST<br/>localhost:5210"| AUTH_MW
     SVC -->|"JWT Token"| LOCAL
-    UI -->|"📷 Ảnh chụp"| GEMINI
+    UI -->|"📷 Ảnh chụp (Base64)"| EXPRESS
+    EXPRESS -->|"Gắn API Key an toàn"| GEMINI
 
     AUTH_MW --> CTRL
     CTRL --> BIZ
@@ -258,6 +263,7 @@ sequenceDiagram
     participant U as 👤 Người dùng
     participant F as 📱 ScannerScreen
     participant SVC as 🤖 GeminiVisionService
+    participant PROXY as 🚀 Express Proxy
     participant AI as ☁️ Google Gemini API
     participant F2 as 📱 Kết quả
 
@@ -269,9 +275,12 @@ sequenceDiagram
     SVC->>SVC: Encode Base64
 
     loop Retry tối đa 3 lần
-        SVC->>AI: POST Gemini API<br/>(System Prompt + Base64 Image)
+        SVC->>PROXY: POST http://localhost:3000/api/analyze-food<br/>(Base64 Image)
+        PROXY->>PROXY: Đọc GEMINI_API_KEY từ file .env
+        PROXY->>AI: POST Gemini API<br/>(System Prompt + Base64 Image + API Key)
         Note right of AI: AI phân tích ảnh:<br/>- Nhận diện món ăn<br/>- Ước lượng Calo<br/>- Tính Protein/Carbs/Fat
-        AI-->>SVC: JSON Response
+        AI-->>PROXY: JSON Response
+        PROXY-->>SVC: Trả lại JSON nguyên bản
     end
 
     SVC->>SVC: Parse JSON → FoodAnalysisResult
@@ -351,7 +360,11 @@ flowchart LR
     end
 
     subgraph Auth
-        B["🔐 JWT Token<br/>(SharedPreferences)"]
+        B["🔐 JWT Token & Diary<br/>(SharedPreferences & Isar)"]
+    end
+
+    subgraph Proxy
+        P["🚀 Express.js Proxy<br/>(localhost:3000)"]
     end
 
     subgraph Backend
@@ -371,17 +384,20 @@ flowchart LR
     end
 
     A -->|"HTTP + JWT"| C
-    A -->|"Lưu/đọc token"| B
-    A -->|"Gửi ảnh trực tiếp"| E
+    A -->|"Lưu/đọc token & offline data"| B
+    A -->|"Gửi ảnh Base64"| P
+    P -->|"Gắn API Key bảo mật"| E
     C -->|"EF Core"| D
     F -->|"Seeder khởi tạo"| D
-    E -->|"JSON kết quả"| A
+    E -->|"JSON kết quả"| P
+    P -->|"JSON kết quả"| A
 
     style A fill:#42A5F5,color:#fff
     style C fill:#66BB6A,color:#fff
+    style P fill:#AB47BC,color:#fff
     style D fill:#FFA726,color:#fff
     style E fill:#EF5350,color:#fff
 ```
 
 > [!IMPORTANT]
-> **Điểm đặc biệt**: Tính năng Scanner (Quét ảnh AI) gọi **trực tiếp** từ Flutter đến Google Gemini API, **không đi qua Backend .NET**. Điều này giúp giảm tải cho backend nhưng cũng có nghĩa là API Key của Gemini nằm ở phía client.
+> **Điểm đặc biệt được nâng cấp (Bảo mật)**: Tính năng Scanner (Quét ảnh AI) hiện tại gọi qua **Node.js Express Proxy (localhost:3000)** thay vì gọi trực tiếp đến Google Gemini API. Proxy server sẽ tự động đính kèm `GEMINI_API_KEY` lấy từ biến môi trường `.env`. Điều này giúp bảo mật hoàn toàn API Key, tránh bị lộ ở client (Flutter Web/App), đồng thời vẫn giữ được hiệu năng cao và độc lập với Backend .NET chính.
