@@ -15,7 +15,7 @@ extension GetIsarFoodEntryCollection on Isar {
 
 const IsarFoodEntrySchema = CollectionSchema(
   name: r'IsarFoodEntry',
-  id: -8041729998006009124,
+  id: -8041729998006008832,
   properties: {
     r'calories': PropertySchema(
       id: 0,

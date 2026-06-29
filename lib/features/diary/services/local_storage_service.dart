@@ -1,78 +1,61 @@
-import 'package:isar/isar.dart';
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/package_path_provider.dart';
 import '../models/food_entry.dart';
-import '../models/isar_food_entry.dart';
 
 class LocalStorageService {
   static const String _dailyGoalKey = 'daily_goal';
-  Isar? _isar;
-
-  Future<Isar> get isar async {
-    if (_isar != null && _isar!.isOpen) return _isar!;
-    
-    // Check if instance is already open elsewhere
-    if (Isar.getInstance() != null) {
-      _isar = Isar.getInstance()!;
-      return _isar!;
-    }
-    
-    // Web support or path provider
-    String? dirPath;
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      dirPath = dir.path;
-    } catch (e) {
-      // In case of Web, getApplicationDocumentsDirectory might throw, so keep dirPath null
-    }
-
-    _isar = await Isar.open(
-      [IsarFoodEntrySchema],
-      directory: dirPath ?? '',
-    );
-    return _isar!;
-  }
+  static const String _entriesKey = 'diary_entries';
 
   Future<List<FoodEntry>> loadEntries() async {
-    final isarInstance = await isar;
-    final isarEntries = await isarInstance.isarFoodEntrys.where().findAll();
+    final prefs = await SharedPreferences.getInstance();
+    final entriesJson = prefs.getStringList(_entriesKey) ?? [];
     
-    return isarEntries.map((e) => FoodEntry(
-      id: e.entryId,
-      name: e.foodName,
-      calories: e.calories.round(),
-      proteinG: e.protein,
-      carbsG: e.carbs,
-      fatG: e.fat,
-      date: e.date,
-      mealType: e.mealType,
-      imagePath: e.imagePath,
-    )).toList();
+    return entriesJson.map((e) {
+      final map = jsonDecode(e);
+      return FoodEntry(
+        id: map['id'],
+        name: map['name'],
+        calories: map['calories'],
+        proteinG: map['proteinG'],
+        carbsG: map['carbsG'],
+        fatG: map['fatG'],
+        date: DateTime.parse(map['date']),
+        mealType: map['mealType'],
+        imagePath: map['imagePath'],
+      );
+    }).toList();
   }
 
   Future<void> addEntry(FoodEntry entry) async {
-    final isarInstance = await isar;
-    final isarEntry = IsarFoodEntry()
-      ..entryId = entry.id
-      ..foodName = entry.name
-      ..calories = entry.calories.toDouble()
-      ..protein = entry.proteinG
-      ..carbs = entry.carbsG
-      ..fat = entry.fatG
-      ..date = entry.date
-      ..mealType = entry.mealType
-      ..imagePath = entry.imagePath;
-
-    await isarInstance.writeTxn(() async {
-      await isarInstance.isarFoodEntrys.put(isarEntry);
-    });
+    final prefs = await SharedPreferences.getInstance();
+    final entriesJson = prefs.getStringList(_entriesKey) ?? [];
+    
+    final map = {
+      'id': entry.id,
+      'name': entry.name,
+      'calories': entry.calories,
+      'proteinG': entry.proteinG,
+      'carbsG': entry.carbsG,
+      'fatG': entry.fatG,
+      'date': entry.date.toIso8601String(),
+      'mealType': entry.mealType,
+      'imagePath': entry.imagePath,
+    };
+    
+    entriesJson.add(jsonEncode(map));
+    await prefs.setStringList(_entriesKey, entriesJson);
   }
 
   Future<void> removeEntry(String id) async {
-    final isarInstance = await isar;
-    await isarInstance.writeTxn(() async {
-      await isarInstance.isarFoodEntrys.filter().entryIdEqualTo(id).deleteAll();
+    final prefs = await SharedPreferences.getInstance();
+    final entriesJson = prefs.getStringList(_entriesKey) ?? [];
+    
+    entriesJson.removeWhere((e) {
+      final map = jsonDecode(e);
+      return map['id'] == id;
     });
+    
+    await prefs.setStringList(_entriesKey, entriesJson);
   }
 
   Future<int> getDailyGoal() async {
