@@ -7,7 +7,7 @@ class ApiClient {
 
   // Đối với Android Emulator thì localhost là 10.0.2.2. Web thì dùng localhost.
   // Ở đây cấu hình tạm cho localhost thông thường.
-  static const String baseUrl = 'http://localhost:5210/api';
+  static const String baseUrl = 'http://127.0.0.1:5210/api';
 
   factory ApiClient() {
     return _instance;
