@@ -48,18 +48,9 @@ Quy tắc:
   }) async {
     final originalBytes = await XFile(imagePath).readAsBytes();
     
-    // Nén ảnh khẩn cấp để tránh lỗi Timeout (quá 60s)
+    // Không nên nén ảnh bằng package:image trên Web vì chạy rất chậm (chạy đơn luồng trên JS).
+    // Vì kết nối đến Proxy Server là ở Localhost, ta có thể gửi thẳng ảnh gốc để tiết kiệm 10s xử lý.
     Uint8List imageBytes = originalBytes;
-    try {
-      final decodedImage = img.decodeImage(originalBytes);
-      if (decodedImage != null) {
-        // Ép kích thước tối đa 800px và giảm chất lượng xuống 70%
-        final resized = img.copyResize(decodedImage, width: 800);
-        imageBytes = Uint8List.fromList(img.encodeJpg(resized, quality: 70));
-      }
-    } catch (e) {
-      print('Lỗi nén ảnh: $e');
-    }
 
     final base64Image = base64Encode(imageBytes);
     final mimeType = 'image/jpeg';
@@ -85,17 +76,8 @@ Quy tắc:
     String imagePath, {
     int maxRetries = 3,
   }) async {
-    // Nén ảnh khẩn cấp cho Web để tránh Timeout
+    // Không nên nén ảnh bằng package:image trên Web vì chạy rất chậm (chạy đơn luồng trên JS).
     Uint8List imageBytes = originalBytes;
-    try {
-      final decodedImage = img.decodeImage(originalBytes);
-      if (decodedImage != null) {
-        final resized = img.copyResize(decodedImage, width: 800);
-        imageBytes = Uint8List.fromList(img.encodeJpg(resized, quality: 70));
-      }
-    } catch (e) {
-      print('Lỗi nén ảnh Web: $e');
-    }
 
     final base64Image = base64Encode(imageBytes);
     const mimeType = 'image/jpeg';
@@ -121,7 +103,7 @@ Quy tắc:
     String mimeType,
     String imagePath,
   ) async {
-    const proxyUrl = 'http://localhost:3000/api/analyze-food';
+    const proxyUrl = 'http://127.0.0.1:3000/api/analyze-food';
 
     final requestBody = {
       'imageBase64': base64Image,
