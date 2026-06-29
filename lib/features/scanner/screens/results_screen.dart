@@ -93,18 +93,22 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       'Ăn Vặt': 'Snack'
     };
 
-    final request = LogMealRequest(
-      foodName: combinedName,
-      caloriesPer100g: _totalCalories / (_servingScale == 0 ? 1 : _servingScale),
-      quantity: _servingScale * 100,
-      mealType: mealMap[_selectedMeal] ?? 'Snack',
+    final entry = FoodEntry(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: combinedName,
+      calories: _totalCalories.round(),
+      proteinG: _totalProtein,
+      carbsG: _totalCarbs,
+      fatG: _totalFat,
       date: DateTime.now(),
+      mealType: mealMap[_selectedMeal] ?? 'Snack',
+      imagePath: widget.result.imagePath,
     );
 
     try {
-      await ref.read(diaryApiServiceProvider).logMeal(request);
+      await ref.read(localStorageProvider).addEntry(entry);
       ref.invalidate(dailyDiaryProvider);
-      ref.invalidate(weeklyStatsProvider);
+      // ref.invalidate(weeklyStatsProvider); // TODO: implement local stats
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

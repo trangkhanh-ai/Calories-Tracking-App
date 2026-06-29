@@ -7,9 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme.dart';
 import '../models/food_nutrition_item.dart';
 import '../services/food_search_service.dart';
-import '../../diary/services/diary_api_service.dart';
 import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
+import '../../diary/models/food_entry.dart';
 
 class FoodSearchScreen extends ConsumerStatefulWidget {
   const FoodSearchScreen({super.key});
@@ -21,7 +21,6 @@ class FoodSearchScreen extends ConsumerStatefulWidget {
 class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FoodSearchService _service = FoodSearchService.instance;
-  final DiaryApiService _diaryService = DiaryApiService();
   Timer? _debounce;
   late Future<void> _loadFuture;
   List<FoodNutritionItem> _suggestions = <FoodNutritionItem>[];
@@ -342,13 +341,17 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
         onSave: (quantity, mealType, date) async {
           Navigator.pop(context);
           try {
-            await _diaryService.logMeal(LogMealRequest(
-              foodName: food.name,
-              caloriesPer100g: food.calories ?? 0.0,
-              quantity: quantity,
-              mealType: mealType,
+            final entry = FoodEntry(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              name: food.name,
+              calories: ((food.calories ?? 0.0) * (quantity / 100)).round(),
+              proteinG: (food.protein ?? 0.0) * (quantity / 100),
+              carbsG: (food.carbs ?? 0.0) * (quantity / 100),
+              fatG: (food.fat ?? 0.0) * (quantity / 100),
               date: date,
-            ));
+              mealType: mealType,
+            );
+            await ref.read(localStorageProvider).addEntry(entry);
             ref.invalidate(dailyDiaryProvider);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
