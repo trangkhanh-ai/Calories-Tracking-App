@@ -121,69 +121,29 @@ Quy tắc:
     String mimeType,
     String imagePath,
   ) async {
-    final apiKey = AppConstants.geminiApiKey;
-    if (apiKey.isEmpty || apiKey == 'YOUR_GEMINI_API_KEY') {
-      throw Exception('Chưa cấu hình Gemini API Key. Xem file constants.dart');
-    }
+    const proxyUrl = 'http://localhost:3000/api/analyze-food';
 
     final requestBody = {
-      'contents': [
-        {
-          'parts': [
-            {'text': _systemPrompt},
-            {
-              'inline_data': {
-                'mime_type': mimeType,
-                'data': base64Image,
-              }
-            }
-          ]
-        }
-      ],
-      'generationConfig': {
-        'temperature': 0.1,
-        'maxOutputTokens': 8192,
-        'responseMimeType': 'application/json',
-      },
+      'imageBase64': base64Image,
     };
 
     final response = await http
         .post(
-          Uri.parse('$_baseUrl?key=$apiKey'),
+          Uri.parse(proxyUrl),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(requestBody),
         )
         .timeout(const Duration(seconds: 60));
 
-    if (response.statusCode == 429) {
-      throw Exception('Rate limit exceeded (429)');
-    }
     if (response.statusCode != 200) {
       throw Exception('API error ${response.statusCode}: ${response.body}');
     }
 
-    final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
-    final candidates = responseJson['candidates'] as List<dynamic>?;
-    if (candidates == null || candidates.isEmpty) {
-      throw Exception('Không có phản hồi từ AI');
-    }
-
-    final content = candidates[0]['content']['parts'][0]['text'] as String;
-    
-    // Clean JSON if needed (remove markdown code blocks)
-    String cleanJson = content.trim();
-    if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson
-          .replaceFirst(RegExp(r'```json?\n?'), '')
-          .replaceAll(RegExp(r'\n?```$'), '')
-          .trim();
-    }
-
     try {
-      final parsed = jsonDecode(cleanJson) as Map<String, dynamic>;
+      final parsed = jsonDecode(response.body) as Map<String, dynamic>;
       return FoodAnalysisResult.fromJson(parsed, imagePath);
     } catch (e) {
-      throw Exception('Lỗi JSON ($e). Dữ liệu AI trả về: $cleanJson');
+      throw Exception('Lỗi JSON ($e). Dữ liệu proxy trả về: ${response.body}');
     }
   }
 
