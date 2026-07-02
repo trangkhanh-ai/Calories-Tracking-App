@@ -21,4 +21,6 @@ public sealed class ProfileResponse
     public string? Gender { get; init; }
 
     public int? TargetCalories { get; init; }
+
+    public string? ActivityLevel { get; init; }
 }

@@ -135,6 +135,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  /// Map enum client → giá trị ActivityLevel backend chấp nhận
+  String _activityLevelApiValue(ActivityLevel level) {
+    switch (level) {
+      case ActivityLevel.sedentary:
+        return 'sedentary';
+      case ActivityLevel.lightlyActive:
+        return 'light';
+      case ActivityLevel.moderatelyActive:
+        return 'moderate';
+      case ActivityLevel.veryActive:
+        return 'active';
+      case ActivityLevel.extraActive:
+        return 'very_active';
+    }
+  }
+
   void _calculate() {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
@@ -171,6 +187,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           gender: _gender == Gender.male ? 'Male' : 'Female',
           targetCalories: _recommendedCalories!,
           defaultAvatarUrl: _selectedDefaultAvatarUrl,
+          activityLevel: _activityLevelApiValue(_activityLevel),
         );
 
         if (result != null && mounted) {

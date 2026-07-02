@@ -11,4 +11,10 @@ public interface IProfileService
         UpdateProfileRequest request,
         AvatarUploadCandidate? avatarFile = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tính BMI/BMR/TDEE/calo khuyến nghị từ hồ sơ user.
+    /// goal: lose | maintain | gain (mặc định maintain).
+    /// </summary>
+    Task<CalorieGoalResponse> GetCalorieGoalAsync(int userId, string? goal = null, CancellationToken cancellationToken = default);
 }

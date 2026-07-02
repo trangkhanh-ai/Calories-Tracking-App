@@ -24,5 +24,8 @@ public class User
 
     public int? TargetCalories { get; set; }
 
+    /// <summary>sedentary | light | moderate | active | very_active</summary>
+    public string? ActivityLevel { get; set; }
+
     public ICollection<DailyLog> DailyLogs { get; set; } = new List<DailyLog>();
 }

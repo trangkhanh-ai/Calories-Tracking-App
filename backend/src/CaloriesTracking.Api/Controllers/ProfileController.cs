@@ -73,11 +73,39 @@ public sealed class ProfileController : ControllerBase
                     Weight = request.Weight,
                     Age = request.Age,
                     Gender = request.Gender,
-                    TargetCalories = request.TargetCalories
+                    TargetCalories = request.TargetCalories,
+                    ActivityLevel = request.ActivityLevel
                 },
                 avatarFile,
                 cancellationToken);
 
+            return Ok(response);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Tính BMI/BMR/TDEE/calo khuyến nghị. ?goal=lose|maintain|gain</summary>
+    [HttpGet("calorie-goal")]
+    public async Task<ActionResult<CalorieGoalResponse>> GetCalorieGoal(
+        [FromQuery] string? goal,
+        CancellationToken cancellationToken)
+    {
+        var currentUserId = GetCurrentUserId();
+        if (currentUserId is null)
+        {
+            return Unauthorized(new { message = "User id claim is missing or invalid." });
+        }
+
+        try
+        {
+            var response = await _profileService.GetCalorieGoalAsync(currentUserId.Value, goal, cancellationToken);
             return Ok(response);
         }
         catch (KeyNotFoundException ex)

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'app/router.dart';
 import 'app/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  // KHÔNG load .env ở client: mọi secret nằm ở backend.
+  // Cấu hình duy nhất của client là BACKEND_BASE_URL qua --dart-define.
   await initializeDateFormatting('vi', null);
   runApp(
     const ProviderScope(

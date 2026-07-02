@@ -29,12 +29,8 @@ public sealed class DiaryService : IDiaryService
         decimal targetCalories = user?.TargetCalories ?? 2000;
         if (user != null && user.TargetCalories == null && user.Weight > 0 && user.Height > 0 && user.Age > 0)
         {
-            // BMR calculation (Mifflin-St Jeor)
-            decimal bmr = 10 * user.Weight.Value + 6.25m * user.Height.Value - 5 * user.Age.Value;
-            bmr += user.Gender?.ToLower() == "male" ? 5 : -161;
-            
-            // TDEE (assuming sedentary for now)
-            targetCalories = bmr * 1.2m;
+            var bmr = CalorieCalculator.CalculateBmr(user.Gender, user.Weight.Value, user.Height.Value, user.Age.Value);
+            targetCalories = CalorieCalculator.CalculateTdee(bmr, user.ActivityLevel);
         }
 
         if (dailyLog == null)

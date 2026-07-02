@@ -92,27 +92,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   // ─── Remember Me ──────────────────────────────────────────────────────────
+  // Chỉ lưu username. KHÔNG lưu mật khẩu dưới bất kỳ hình thức nào —
+  // SharedPreferences là plaintext, phiên đăng nhập đã được giữ bằng JWT.
 
-  /// Lưu tên đăng nhập + mật khẩu vào bộ nhớ cục bộ
-  Future<void> saveCredentials(String username, String password) async {
+  /// Lưu tên đăng nhập vào bộ nhớ cục bộ
+  Future<void> saveRememberedUsername(String username) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_username', username);
-    await prefs.setString('saved_password', password);
   }
 
-  /// Đọc tên đăng nhập + mật khẩu đã lưu (trả về null nếu chưa lưu)
-  Future<Map<String, String>?> loadSavedCredentials() async {
+  /// Đọc tên đăng nhập đã lưu (trả về null nếu chưa lưu)
+  Future<String?> loadRememberedUsername() async {
     final prefs = await SharedPreferences.getInstance();
-    final username = prefs.getString('saved_username');
-    final password = prefs.getString('saved_password');
-    if (username != null && password != null) {
-      return {'username': username, 'password': password};
-    }
-    return null;
+    // Dọn mật khẩu plaintext mà các bản cũ từng lưu
+    await prefs.remove('saved_password');
+    return prefs.getString('saved_username');
   }
 
-  /// Xóa dữ liệu đăng nhập đã lưu
-  Future<void> clearSavedCredentials() async {
+  /// Xóa tên đăng nhập đã lưu
+  Future<void> clearRememberedUsername() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('saved_username');
     await prefs.remove('saved_password');

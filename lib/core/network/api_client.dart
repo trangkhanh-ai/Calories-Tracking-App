@@ -1,13 +1,16 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../shared/utils/constants.dart';
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
   late Dio dio;
 
-  // Đối với Android Emulator thì localhost là 10.0.2.2. Web thì dùng localhost.
-  // Ở đây cấu hình tạm cho localhost thông thường.
-  static const String baseUrl = 'http://127.0.0.1:5210/api';
+  // Base URL đọc từ --dart-define=BACKEND_BASE_URL (mặc định localhost:5210).
+  // Android Emulator: dùng --dart-define=BACKEND_BASE_URL=http://10.0.2.2:5210
+  static const String baseUrl = '${AppConstants.backendBaseUrl}/api';
 
   factory ApiClient() {
     return _instance;
@@ -34,15 +37,21 @@ class ApiClient {
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
           }
-          print('--> ${options.method} ${options.uri}');
+          if (kDebugMode) {
+            debugPrint('--> ${options.method} ${options.uri}');
+          }
           return handler.next(options);
         },
         onResponse: (response, handler) {
-          print('<-- ${response.statusCode} ${response.requestOptions.uri}');
+          if (kDebugMode) {
+            debugPrint('<-- ${response.statusCode} ${response.requestOptions.uri}');
+          }
           return handler.next(response);
         },
         onError: (DioException e, handler) {
-          print('<-- Error ${e.message}');
+          if (kDebugMode) {
+            debugPrint('<-- Error ${e.message}');
+          }
           return handler.next(e);
         },
       ),

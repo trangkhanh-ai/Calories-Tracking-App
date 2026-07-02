@@ -93,6 +93,18 @@ public sealed class ProfileService : IProfileService
             user.TargetCalories = request.TargetCalories.Value;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ActivityLevel))
+        {
+            var level = request.ActivityLevel.Trim().ToLowerInvariant();
+            if (!CalorieCalculator.IsValidActivityLevel(level))
+            {
+                throw new ArgumentException(
+                    "ActivityLevel must be one of: sedentary, light, moderate, active, very_active.",
+                    nameof(request.ActivityLevel));
+            }
+            user.ActivityLevel = level;
+        }
+
         if (avatarFile is not null)
         {
             ValidateAvatarFile(avatarFile);
@@ -111,6 +123,33 @@ public sealed class ProfileService : IProfileService
         await _userRepository.SaveChangesAsync(cancellationToken);
 
         return MapToResponse(user);
+    }
+
+    public async Task<CalorieGoalResponse> GetCalorieGoalAsync(int userId, string? goal = null, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            throw new KeyNotFoundException($"User with id '{userId}' was not found.");
+        }
+
+        if (user.Weight is not > 0 || user.Height is not > 0 || user.Age is not > 0)
+        {
+            throw new ArgumentException("Profile is incomplete: weight, height and age are required to calculate the calorie goal.");
+        }
+
+        var bmi = CalorieCalculator.CalculateBmi(user.Weight.Value, user.Height.Value);
+        var bmr = CalorieCalculator.CalculateBmr(user.Gender, user.Weight.Value, user.Height.Value, user.Age.Value);
+        var tdee = CalorieCalculator.CalculateTdee(bmr, user.ActivityLevel);
+
+        return new CalorieGoalResponse
+        {
+            Bmi = Math.Round(bmi, 1),
+            Bmr = Math.Round(bmr),
+            Tdee = Math.Round(tdee),
+            RecommendedCalories = CalorieCalculator.RecommendCalories(tdee, goal),
+            ActivityLevel = user.ActivityLevel ?? "sedentary"
+        };
     }
 
     private static void ValidateAvatarFile(AvatarUploadCandidate avatarFile)
@@ -151,7 +190,8 @@ public sealed class ProfileService : IProfileService
             Weight = user.Weight,
             Age = user.Age,
             Gender = user.Gender,
-            TargetCalories = user.TargetCalories
+            TargetCalories = user.TargetCalories,
+            ActivityLevel = user.ActivityLevel
         };
     }
 }

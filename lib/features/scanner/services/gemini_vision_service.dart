@@ -1,92 +1,40 @@
 import 'dart:convert';
-import 'package:cross_file/cross_file.dart';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img; // Thêm thư viện nén ảnh
-import 'package:google_generative_ai/google_generative_ai.dart';
+
+import 'package:cross_file/cross_file.dart';
+import 'package:dio/dio.dart';
+
+import '../../../core/network/api_client.dart';
 import '../models/food_analysis_result.dart';
-import '../../../shared/utils/constants.dart';
 
+/// Gửi ảnh món ăn lên backend (.NET) để phân tích dinh dưỡng.
+/// Backend giữ Gemini API key và gọi Gemini Vision — client không giữ secret nào.
+/// Response schema: xem docs/API_SPEC.md.
 class GeminiVisionService {
-  static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
-
-  static const String _systemPrompt = '''
-Bạn là chuyên gia dinh dưỡng người Việt Nam. Hãy phân tích ảnh thức ăn và trả về JSON.
-Ưu tiên nhận diện các món ăn Việt Nam (phở, bún, cơm, bánh mì, v.v.).
-
-Trả về CHÍNH XÁC format JSON sau (không thêm markdown, không thêm text):
-{
-  "food_detected": true,
-  "items": [
-    {
-      "name": "Tên món bằng tiếng Việt",
-      "name_en": "English name",
-      "serving_size": "Khẩu phần ước tính (VD: 1 bát / 300g)",
-      "calories": 350,
-      "protein_g": 15.5,
-      "carbs_g": 45.0,
-      "fat_g": 8.2,
-      "confidence": 0.92
-    }
-  ],
-  "image_quality": "good",
-  "notes": "Ghi chú bổ sung nếu có"
-}
-
-Quy tắc:
-- Nếu không thấy thức ăn: food_detected = false, items = []
-- image_quality: "good" | "low_light" | "blurry"
-- confidence: 0.0 đến 1.0
-- Nếu có nhiều món: liệt kê tất cả trong mảng items
-- calories và macros là ước tính cho 1 khẩu phần thông thường
-''';
+  static const _analyzePath = '/analysis/food';
+  static const _receiveTimeout = Duration(seconds: 60);
 
   Future<FoodAnalysisResult> analyzeImage(
     String imagePath, {
     int maxRetries = 3,
   }) async {
-    final originalBytes = await XFile(imagePath).readAsBytes();
-    
-    // Không nên nén ảnh bằng package:image trên Web vì chạy rất chậm (chạy đơn luồng trên JS).
-    // Vì kết nối đến Proxy Server là ở Localhost, ta có thể gửi thẳng ảnh gốc để tiết kiệm 10s xử lý.
-    Uint8List imageBytes = originalBytes;
-
-    final base64Image = base64Encode(imageBytes);
-    final mimeType = 'image/jpeg';
-
-    Exception? lastError;
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        final result = await _callGeminiApi(base64Image, mimeType, imagePath);
-        return result;
-      } catch (e) {
-        lastError = Exception('Lỗi phân tích: $e');
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(seconds: attempt * 2));
-        }
-      }
-    }
-
-    throw lastError ?? Exception('Không thể phân tích ảnh sau $maxRetries lần thử');
+    final bytes = await XFile(imagePath).readAsBytes();
+    return analyzeImageBytes(bytes, imagePath, maxRetries: maxRetries);
   }
 
   Future<FoodAnalysisResult> analyzeImageBytes(
-    Uint8List originalBytes,
+    Uint8List imageBytes,
     String imagePath, {
     int maxRetries = 3,
   }) async {
-    // Không nên nén ảnh bằng package:image trên Web vì chạy rất chậm (chạy đơn luồng trên JS).
-    Uint8List imageBytes = originalBytes;
-
+    // Không nén ảnh ở client (package:image chạy đơn luồng trên Web, rất chậm).
+    // Backend sẽ resize/nén trước khi gửi Gemini.
     final base64Image = base64Encode(imageBytes);
-    const mimeType = 'image/jpeg';
 
     Exception? lastError;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        final result = await _callGeminiApi(base64Image, mimeType, imagePath);
-        return result;
+        return await _callBackend(base64Image, imagePath);
       } catch (e) {
         lastError = Exception('Lỗi phân tích: $e');
         if (attempt < maxRetries) {
@@ -98,49 +46,20 @@ Quy tắc:
     throw lastError ?? Exception('Không thể phân tích ảnh sau $maxRetries lần thử');
   }
 
-  Future<FoodAnalysisResult> _callGeminiApi(
+  Future<FoodAnalysisResult> _callBackend(
     String base64Image,
-    String mimeType,
     String imagePath,
   ) async {
-    const proxyUrl = 'http://127.0.0.1:3000/api/analyze-food';
+    final response = await apiClient.post(
+      _analyzePath,
+      data: {'imageBase64': base64Image},
+      options: Options(receiveTimeout: _receiveTimeout),
+    );
 
-    final requestBody = {
-      'imageBase64': base64Image,
-    };
-
-    final response = await http
-        .post(
-          Uri.parse(proxyUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(requestBody),
-        )
-        .timeout(const Duration(seconds: 60));
-
-    if (response.statusCode != 200) {
-      throw Exception('API error ${response.statusCode}: ${response.body}');
-    }
-
-    try {
-      final parsed = jsonDecode(response.body) as Map<String, dynamic>;
-      return FoodAnalysisResult.fromJson(parsed, imagePath);
-    } catch (e) {
-      throw Exception('Lỗi JSON ($e). Dữ liệu proxy trả về: ${response.body}');
-    }
-  }
-
-  String _getMimeType(String path) {
-    final ext = path.toLowerCase().split('.').last;
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      default:
-        return 'image/jpeg';
-    }
+    final data = response.data;
+    final parsed = data is Map<String, dynamic>
+        ? data
+        : jsonDecode(data as String) as Map<String, dynamic>;
+    return FoodAnalysisResult.fromJson(parsed, imagePath);
   }
 }

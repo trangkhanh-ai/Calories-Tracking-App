@@ -22,7 +22,11 @@ jobs:
         run: flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href /Calories-Tracking-App/
+        # BACKEND_BASE_URL: đặt trong Settings → Secrets and variables → Actions → Variables
+        # trỏ về backend production (vd https://calories-api.onrender.com)
+        run: >
+          flutter build web --release --base-href /Calories-Tracking-App/
+          --dart-define=BACKEND_BASE_URL=${{ vars.BACKEND_BASE_URL || 'http://localhost:5210' }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

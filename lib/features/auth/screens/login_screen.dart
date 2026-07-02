@@ -15,7 +15,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   final _usernameFocusNode = FocusNode();
   bool _rememberMe = false;
-  Map<String, String>? _savedCredentials;
+  String? _savedUsername;
   bool _showSuggestion = false;
 
   @override
@@ -25,7 +25,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     // Lắng nghe khi ô username được focus → hiện popup gợi ý
     _usernameFocusNode.addListener(() {
-      if (_usernameFocusNode.hasFocus && _savedCredentials != null) {
+      if (_usernameFocusNode.hasFocus && _savedUsername != null) {
         setState(() => _showSuggestion = true);
       }
     });
@@ -40,21 +40,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final saved = await ref.read(authProvider.notifier).loadSavedCredentials();
+    final saved = await ref.read(authProvider.notifier).loadRememberedUsername();
     if (saved != null && mounted) {
       setState(() {
-        _savedCredentials = saved;
+        _savedUsername = saved;
         _rememberMe = true;
       });
     }
   }
 
-  /// Khi người dùng chọn tài khoản từ popup gợi ý
+  /// Khi người dùng chọn tài khoản từ popup gợi ý (chỉ điền username,
+  /// mật khẩu không được lưu vì lý do bảo mật)
   void _applySavedCredentials() {
-    if (_savedCredentials == null) return;
+    if (_savedUsername == null) return;
     setState(() {
-      _usernameController.text = _savedCredentials!['username']!;
-      _passwordController.text = _savedCredentials!['password']!;
+      _usernameController.text = _savedUsername!;
       _showSuggestion = false;
       _rememberMe = true;
     });
@@ -70,11 +70,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           password,
         );
     if (success) {
-      // Lưu hoặc xóa thông tin đăng nhập tùy theo checkbox
+      // Lưu hoặc xóa tên đăng nhập tùy theo checkbox
       if (_rememberMe) {
-        await ref.read(authProvider.notifier).saveCredentials(username, password);
+        await ref.read(authProvider.notifier).saveRememberedUsername(username);
       } else {
-        await ref.read(authProvider.notifier).clearSavedCredentials();
+        await ref.read(authProvider.notifier).clearRememberedUsername();
       }
       if (mounted) context.go('/');
     } else {
@@ -132,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         controller: _usernameController,
                         focusNode: _usernameFocusNode,
                         onTap: () {
-                          if (_savedCredentials != null) {
+                          if (_savedUsername != null) {
                             setState(() => _showSuggestion = true);
                           }
                         },
@@ -145,7 +145,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
 
                       // ★ Popup gợi ý tài khoản đã lưu ★
-                      if (_showSuggestion && _savedCredentials != null)
+                      if (_showSuggestion && _savedUsername != null)
                         Container(
                           margin: const EdgeInsets.only(top: 4),
                           decoration: BoxDecoration(
@@ -184,7 +184,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            _savedCredentials!['username']!,
+                                            _savedUsername!,
                                             style: const TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600,
