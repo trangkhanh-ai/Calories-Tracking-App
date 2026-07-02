@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../profile/services/profile_api_service.dart';
 import '../services/local_storage_service.dart';
-import '../models/food_entry.dart';
 import '../models/diary_dto.dart';
 
 final localStorageProvider = Provider<LocalStorageService>((ref) {
@@ -9,10 +9,26 @@ final localStorageProvider = Provider<LocalStorageService>((ref) {
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
 
+// LƯU Ý KIẾN TRÚC: các bữa ăn (entries) hiện lưu LOCAL (SharedPreferences).
+// Backend có sẵn Diary API (/api/diary) nhưng client chưa nối — planned.
+// Riêng MỤC TIÊU CALO ưu tiên lấy từ profile backend (user thiết lập qua
+// /goal-setup); chỉ fallback về giá trị local khi offline/chưa đăng nhập.
 final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
   final storage = ref.watch(localStorageProvider);
   final date = ref.watch(selectedDateProvider);
-  
+
+  double targetCalories = (await storage.getDailyGoal()).toDouble();
+  try {
+    final profile = await profileApiService.getProfile();
+    final backendTarget = profile?['targetCalories'];
+    if (backendTarget is num && backendTarget > 0) {
+      targetCalories = backendTarget.toDouble();
+      await storage.setDailyGoal(backendTarget.toInt()); // đồng bộ cache local
+    }
+  } catch (_) {
+    // Offline / backend không chạy: dùng giá trị local
+  }
+
   final entries = await storage.loadEntries();
   
   // Filter for selected date
@@ -57,7 +73,7 @@ final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
   return DailyDiaryDto(
     date: date,
     totalCaloriesConsumed: totalCalories,
-    targetCalories: (await storage.getDailyGoal()).toDouble(),
+    targetCalories: targetCalories,
     breakfast: breakfast,
     lunch: lunch,
     dinner: dinner,

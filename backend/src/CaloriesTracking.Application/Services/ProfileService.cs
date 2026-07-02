@@ -148,7 +148,8 @@ public sealed class ProfileService : IProfileService
             Bmr = Math.Round(bmr),
             Tdee = Math.Round(tdee),
             RecommendedCalories = CalorieCalculator.RecommendCalories(tdee, goal),
-            ActivityLevel = user.ActivityLevel ?? "sedentary"
+            ActivityLevel = user.ActivityLevel ?? "sedentary",
+            ActivityFactor = CalorieCalculator.GetActivityFactor(user.ActivityLevel)
         };
     }
 

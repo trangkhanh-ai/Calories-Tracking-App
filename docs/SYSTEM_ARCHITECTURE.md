@@ -10,18 +10,14 @@ graph TB
         UI["🎨 Giao diện người dùng<br/>(Flutter Widgets)"]
         PROV["📦 State Management<br/>(Riverpod Providers)"]
         SVC["🔌 API Services<br/>(Dio HTTP Client)"]
-        LOCAL["💾 Local Storage<br/>(Isar & SharedPreferences)"]
-    end
-
-    subgraph "🛡️ PROXY LAYER"
-        EXPRESS["🚀 Node.js Express Proxy<br/>(localhost:3000)"]
+        LOCAL["💾 Local Storage<br/>(SharedPreferences)"]
     end
 
     subgraph "☁️ EXTERNAL API"
         GEMINI["🤖 Google Gemini AI<br/>(Vision API)"]
     end
 
-    subgraph "⚙️ BACKEND - .NET 8 API"
+    subgraph "⚙️ BACKEND - .NET API"
         CTRL["🎯 Controllers<br/>(API Endpoints)"]
         BIZ["🧠 Application Services<br/>(Business Logic)"]
         REPO["📂 Repositories<br/>(Data Access)"]
@@ -37,10 +33,9 @@ graph TB
 
     UI --> PROV
     PROV --> SVC
-    SVC -->|"HTTP REST<br/>localhost:5210"| AUTH_MW
+    SVC -->|"HTTP REST + JWT<br/>BACKEND_BASE_URL"| AUTH_MW
     SVC -->|"JWT Token"| LOCAL
-    UI -->|"📷 Ảnh chụp (Base64)"| EXPRESS
-    EXPRESS -->|"Gắn API Key an toàn"| GEMINI
+    BIZ -->|"📷 POST /api/analysis/food<br/>(server giữ Gemini key)"| GEMINI
 
     AUTH_MW --> CTRL
     CTRL --> BIZ
@@ -263,7 +258,7 @@ sequenceDiagram
     participant U as 👤 Người dùng
     participant F as 📱 ScannerScreen
     participant SVC as 🤖 GeminiVisionService
-    participant PROXY as 🚀 Express Proxy
+    participant API as ⚙️ .NET AnalysisController
     participant AI as ☁️ Google Gemini API
     participant F2 as 📱 Kết quả
 
@@ -271,16 +266,15 @@ sequenceDiagram
     U->>F: Chụp ảnh / Chọn ảnh từ thư viện
 
     F->>SVC: analyzeImage(imagePath)
-    SVC->>SVC: Nén ảnh → 800px, JPEG 70%
     SVC->>SVC: Encode Base64
 
-    loop Retry tối đa 3 lần
-        SVC->>PROXY: POST http://localhost:3000/api/analyze-food<br/>(Base64 Image)
-        PROXY->>PROXY: Đọc GEMINI_API_KEY từ file .env
-        PROXY->>AI: POST Gemini API<br/>(System Prompt + Base64 Image + API Key)
+    loop Retry tối đa 3 lần (401 thì dừng ngay, báo đăng nhập lại)
+        SVC->>API: POST /api/analysis/food + JWT<br/>(Base64 Image)
+        API->>API: Xác thực JWT, nén ảnh → 800px, JPEG 70%
+        API->>AI: POST Gemini API<br/>(System Prompt + ảnh; key đọc từ env/user-secrets)
         Note right of AI: AI phân tích ảnh:<br/>- Nhận diện món ăn<br/>- Ước lượng Calo<br/>- Tính Protein/Carbs/Fat
-        AI-->>PROXY: JSON Response
-        PROXY-->>SVC: Trả lại JSON nguyên bản
+        AI-->>API: JSON Response
+        API-->>SVC: JSON theo docs/API_SPEC.md
     end
 
     SVC->>SVC: Parse JSON → FoodAnalysisResult
@@ -360,15 +354,11 @@ flowchart LR
     end
 
     subgraph Auth
-        B["🔐 JWT Token & Diary<br/>(SharedPreferences & Isar)"]
-    end
-
-    subgraph Proxy
-        P["🚀 Express.js Proxy<br/>(localhost:3000)"]
+        B["🔐 JWT Token & Diary<br/>(SharedPreferences)"]
     end
 
     subgraph Backend
-        C["⚙️ .NET 8 API<br/>(localhost:5210)"]
+        C["⚙️ .NET API<br/>(BACKEND_BASE_URL, dev: localhost:5210)"]
     end
 
     subgraph Database
@@ -383,21 +373,20 @@ flowchart LR
         F["📊 USDA Dataset<br/>(usda_calorie_dataset.csv)"]
     end
 
-    A -->|"HTTP + JWT"| C
-    A -->|"Lưu/đọc token & offline data"| B
-    A -->|"Gửi ảnh Base64"| P
-    P -->|"Gắn API Key bảo mật"| E
+    A -->|"HTTP + JWT (kể cả ảnh Base64)"| C
+    A -->|"Lưu/đọc token & diary local"| B
+    C -->|"Gắn Gemini key server-side"| E
     C -->|"EF Core"| D
     F -->|"Seeder khởi tạo"| D
-    E -->|"JSON kết quả"| P
-    P -->|"JSON kết quả"| A
+    E -->|"JSON kết quả"| C
 
     style A fill:#42A5F5,color:#fff
     style C fill:#66BB6A,color:#fff
-    style P fill:#AB47BC,color:#fff
     style D fill:#FFA726,color:#fff
     style E fill:#EF5350,color:#fff
 ```
 
 > [!IMPORTANT]
-> **Điểm đặc biệt được nâng cấp (Bảo mật)**: Tính năng Scanner (Quét ảnh AI) hiện tại gọi qua **Node.js Express Proxy (localhost:3000)** thay vì gọi trực tiếp đến Google Gemini API. Proxy server sẽ tự động đính kèm `GEMINI_API_KEY` lấy từ biến môi trường `.env`. Điều này giúp bảo mật hoàn toàn API Key, tránh bị lộ ở client (Flutter Web/App), đồng thời vẫn giữ được hiệu năng cao và độc lập với Backend .NET chính.
+> **Bảo mật**: Tính năng Scanner (Quét ảnh AI) gọi qua **endpoint `POST /api/analysis/food` của Backend .NET** (yêu cầu JWT) thay vì gọi trực tiếp Google Gemini API. Backend đính kèm Gemini key đọc từ user-secrets (dev) hoặc biến môi trường `GEMINI__APIKEY` (production). Client Flutter **không giữ bất kỳ secret nào** — mọi thứ đưa vào Flutter Web đều đọc được từ bundle JS. Proxy Node cũ (`scripts/gemini_proxy.js`) đã deprecated.
+>
+> **Ghi chú diary**: các bữa ăn hiện lưu local (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Backend Diary API có sẵn nhưng client chưa nối (planned).

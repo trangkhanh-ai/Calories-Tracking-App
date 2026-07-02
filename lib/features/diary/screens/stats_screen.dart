@@ -4,7 +4,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../app/theme.dart';
-import '../services/diary_api_service.dart';
 import '../models/diary_dto.dart';
 import '../providers/diary_provider.dart';
 
@@ -23,7 +22,6 @@ final weeklyStatsProvider = FutureProvider<List<DailyStatDto>>((ref) async {
     }
   }
 
-  final target = await storage.getDailyGoal();
   final List<DailyStatDto> stats = [];
   for (var i = 0; i <= 6; i++) {
     final date = start.add(Duration(days: i));

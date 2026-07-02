@@ -11,4 +11,7 @@ public sealed class CalorieGoalResponse
     public int RecommendedCalories { get; init; }
 
     public string ActivityLevel { get; init; } = "sedentary";
+
+    /// <summary>Hệ số vận động đã áp dụng (sedentary = 1.2).</summary>
+    public decimal ActivityFactor { get; init; } = 1.2m;
 }

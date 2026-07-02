@@ -8,11 +8,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/food_analysis_result.dart';
 import '../widgets/macro_card.dart';
 import '../../diary/models/food_entry.dart';
-import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
-import '../../diary/screens/stats_screen.dart';
 import '../../../app/theme.dart';
-import '../../../shared/utils/constants.dart';
 import '../../../shared/utils/constants.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {

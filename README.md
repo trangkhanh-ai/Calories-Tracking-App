@@ -25,14 +25,15 @@
 - 📸 **Scan món ăn qua Camera/Gallery** — Gemini phân tích Calories, Protein, Carbs, Fat cho từng món trong ảnh, trả JSON theo spec cố định ([docs/API_SPEC.md](docs/API_SPEC.md)).
 - 🔐 **Đăng ký / Đăng nhập** — JWT 7 ngày, mật khẩu hash BCrypt. "Nhớ tài khoản" chỉ lưu username (không bao giờ lưu mật khẩu).
 - 👤 **Hồ sơ cá nhân** — chiều cao/cân nặng/tuổi/giới tính/mức vận động + avatar, đồng bộ backend.
-- 🎯 **Thiết lập mục tiêu calo** — sau khi đăng ký, app dẫn qua màn `/goal-setup`: chọn mức vận động (Không tập / Tập nhẹ / Tập vừa / Tập nhiều), backend tính BMI, BMR (Mifflin-St Jeor), TDEE (không tập ⇒ hệ số 1.2) và calo khuyến nghị theo mục tiêu giảm/giữ/tăng cân.
-- 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày.
+- 🎯 **Thiết lập mục tiêu calo** — sau khi đăng ký (hoặc đăng nhập lần đầu chưa có mục tiêu), app dẫn qua màn `/goal-setup`: chọn mức vận động (Không tập / Tập nhẹ / Tập vừa / Tập nhiều), backend tính BMI, BMR (Mifflin-St Jeor), TDEE (không tập ⇒ hệ số 1.2) và calo khuyến nghị theo 5 mục tiêu: giữ cân, giảm chậm (−300), giảm bình thường (−500), tăng chậm (+250), tăng bình thường (+500). Endpoint `GET /api/profile/calorie-goal` trả về cả `activityFactor` đã áp dụng.
+- 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. *Lưu ý: bữa ăn hiện lưu local trên máy (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Nối Diary API backend nằm trong Planned.*
 - 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA (seed sẵn vào SQLite).
 - 🚀 **CI/CD** — GitHub Actions tự build Flutter Web và deploy GitHub Pages khi push `main`.
 
 ## 🔮 Planned / Future improvements
 
 - [ ] Deploy backend lên Render/Railway (Dockerfile đã sẵn — xem [Deploy](#-deploy-production)); chuyển SQLite → PostgreSQL để dữ liệu không mất khi redeploy.
+- [ ] Nối client vào Diary API backend (hiện bữa ăn lưu local, backend đã có sẵn endpoints).
 - [ ] Lưu JWT bằng `flutter_secure_storage` + refresh-token flow.
 - [ ] Rate limiting cho endpoint phân tích ảnh (chống lạm dụng Gemini key).
 - [ ] Lưu avatar thật (hiện là `FakeAvatarStorageService`).
@@ -87,15 +88,16 @@ Chi tiết: [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) · [docs/
 - [.NET SDK](https://dotnet.microsoft.com/download) 9/10
 - Gemini API key ([Google AI Studio](https://aistudio.google.com/apikey))
 
-### Bước 1 — Cấu hình Gemini key cho backend (bắt buộc)
-Key **không nằm trong source code**. Dùng user-secrets (dev):
+### Bước 1 — Cấu hình secrets cho backend (bắt buộc)
+Không có secret nào nằm trong source code. Dùng user-secrets (dev):
 
 ```bash
 cd backend/src/CaloriesTracking.Api
 dotnet user-secrets set "Gemini:ApiKey" "YOUR_GEMINI_API_KEY"
+dotnet user-secrets set "Jwt:Key" "CHUOI_BI_MAT_NGAU_NHIEN_DAI_HON_32_KY_TU"
 ```
 
-(Hoặc đặt biến môi trường `GEMINI__APIKEY`.)
+(Production: dùng biến môi trường `GEMINI__APIKEY` và `JWT__KEY`.) Backend **từ chối khởi động** nếu thiếu `Jwt:Key`.
 
 ### Bước 2 — Chạy backend + frontend
 

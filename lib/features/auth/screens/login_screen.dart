@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../profile/services/profile_api_service.dart';
 import '../providers/auth_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -76,7 +77,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else {
         await ref.read(authProvider.notifier).clearRememberedUsername();
       }
-      if (mounted) context.go('/');
+
+      // Chưa thiết lập mục tiêu calo → đưa qua màn goal setup trước
+      bool hasGoal = true;
+      try {
+        final profile = await profileApiService.getProfile();
+        final target = profile?['targetCalories'];
+        hasGoal = target is num && target > 0;
+      } catch (_) {
+        // Không kiểm tra được (offline) → vào Home như bình thường
+      }
+      if (mounted) context.go(hasGoal ? '/' : '/goal-setup');
     } else {
       final error = ref.read(authProvider).error;
       if (mounted) {

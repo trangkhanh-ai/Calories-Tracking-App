@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme.dart';
 import '../models/food_nutrition_item.dart';
 import '../services/food_search_service.dart';
-import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../diary/models/food_entry.dart';
 

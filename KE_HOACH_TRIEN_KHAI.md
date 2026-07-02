@@ -37,7 +37,7 @@ Trước khi làm theo checklist, cần biết những điểm sau vì chúng **
 
 Key đã nằm trong lịch sử git public → coi như **đã bị lộ vĩnh viễn**. Xóa khỏi code là chưa đủ.
 
-1. **Revoke/rotate key** tại [Google AI Studio](https://aistudio.google.com/apikey): xóa key `AIzaSyC8ix...`, tạo key mới. Key mới **chỉ đặt trong `.env` của proxy/backend, không bao giờ đưa vào code Dart** (Flutter web không giấu được secret — mọi thứ compile ra JS đều đọc được).
+1. **Revoke/rotate key** tại [Google AI Studio](https://aistudio.google.com/apikey): xóa key Gemini cũ (key từng nằm trong `constants.dart`, xem git history), tạo key mới. Key mới **chỉ đặt trong `.env` của proxy/backend, không bao giờ đưa vào code Dart** (Flutter web không giấu được secret — mọi thứ compile ra JS đều đọc được).
 2. Sửa `lib/shared/utils/constants.dart:14`: đổi `defaultValue` thành `''`. (Không cần xóa cả field ngay — nhưng về lâu dài nên xóa hẳn `geminiApiKey` khỏi client, vì client chỉ nên gọi backend.)
 3. Tạo `lib/shared/utils/constants.example.dart` (bản mẫu, không secret) + thêm `lib/shared/utils/constants.dart` vào `.gitignore` **hoặc** giữ `constants.dart` được track nhưng không bao giờ chứa secret (khuyến nghị cách này, vì file còn chứa mealTypes/servingScales là config thường). Nếu chọn tách: chuyển phần secret sang file riêng `secrets.dart` bị gitignore.
 4. Commit + push ngay bản đã gỡ key.
@@ -45,7 +45,7 @@ Key đã nằm trong lịch sử git public → coi như **đã bị lộ vĩnh 
 6. Kiểm tra branch `gh-pages`/bundle web đã deploy: rebuild và deploy lại để bundle không còn key cũ.
 7. Bật **API key restrictions** cho key mới trên Google Cloud Console (giới hạn theo API Generative Language + giới hạn quota).
 
-**Tiêu chí xong:** `git grep AIzaSy` trên HEAD không ra kết quả; key cũ đã bị revoke (gọi thử trả 403); app vẫn chạy qua proxy với key mới trong `.env`.
+**Tiêu chí xong:** `git grep AIza` trên HEAD không ra kết quả; key cũ đã bị revoke (gọi thử trả 403); app vẫn chạy qua proxy với key mới trong `.env`.
 
 ---
 

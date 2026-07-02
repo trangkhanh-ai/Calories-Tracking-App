@@ -35,6 +35,15 @@ class GeminiVisionService {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await _callBackend(base64Image, imagePath);
+      } on DioException catch (e) {
+        // Hết hạn/thiếu phiên đăng nhập: báo ngay, retry vô ích
+        if (e.response?.statusCode == 401) {
+          throw Exception('Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.');
+        }
+        lastError = Exception('Lỗi phân tích: ${e.response?.data ?? e.message}');
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+        }
       } catch (e) {
         lastError = Exception('Lỗi phân tích: $e');
         if (attempt < maxRetries) {

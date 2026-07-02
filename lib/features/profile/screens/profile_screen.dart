@@ -197,7 +197,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           });
           ref.read(dailyGoalProvider.notifier).updateGoal(_recommendedCalories!);
           ref.read(profileProvider.notifier).refresh();
-          await ref.refresh(dailyDiaryProvider.future);
+          ref.invalidate(dailyDiaryProvider);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

@@ -30,20 +30,23 @@ public static class CalorieCalculator
         return bmr + (string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase) ? 5m : -161m);
     }
 
-    /// <summary>Mặc định sedentary (1.2) khi user chưa chọn mức vận động.</summary>
-    public static decimal CalculateTdee(decimal bmr, string? activityLevel)
-    {
-        var factor = activityLevel != null && ActivityFactors.TryGetValue(activityLevel, out var f)
-            ? f
-            : 1.2m;
-        return bmr * factor;
-    }
+    /// <summary>Hệ số vận động; mặc định sedentary (1.2) khi user chưa chọn.</summary>
+    public static decimal GetActivityFactor(string? activityLevel) =>
+        activityLevel != null && ActivityFactors.TryGetValue(activityLevel, out var f) ? f : 1.2m;
 
-    /// <summary>goal: lose (-500) | maintain (0) | gain (+500)</summary>
+    public static decimal CalculateTdee(decimal bmr, string? activityLevel) =>
+        bmr * GetActivityFactor(activityLevel);
+
+    /// <summary>
+    /// goal: maintain (0) | lose_slow (-300) | lose_normal (-500) | gain_slow (+250) | gain_normal (+500).
+    /// Giữ alias cũ: lose = lose_normal, gain = gain_normal.
+    /// </summary>
     public static int RecommendCalories(decimal tdee, string? goal) => goal?.ToLowerInvariant() switch
     {
-        "lose" => (int)Math.Round(tdee - 500),
-        "gain" => (int)Math.Round(tdee + 500),
+        "lose_slow" => (int)Math.Round(tdee - 300),
+        "lose_normal" or "lose" => (int)Math.Round(tdee - 500),
+        "gain_slow" => (int)Math.Round(tdee + 250),
+        "gain_normal" or "gain" => (int)Math.Round(tdee + 500),
         _ => (int)Math.Round(tdee),
     };
 }

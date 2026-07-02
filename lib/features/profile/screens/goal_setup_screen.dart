@@ -188,9 +188,11 @@ class _GoalSetupScreenState extends ConsumerState<GoalSetupScreen> {
                   initialValue: _goal,
                   decoration: _inputDecoration('Mục tiêu của bạn'),
                   items: const [
-                    DropdownMenuItem(value: 'lose', child: Text('Giảm cân (-500 kcal/ngày)')),
                     DropdownMenuItem(value: 'maintain', child: Text('Giữ cân')),
-                    DropdownMenuItem(value: 'gain', child: Text('Tăng cân (+500 kcal/ngày)')),
+                    DropdownMenuItem(value: 'lose_slow', child: Text('Giảm cân chậm (-300 kcal/ngày)')),
+                    DropdownMenuItem(value: 'lose_normal', child: Text('Giảm cân bình thường (-500 kcal/ngày)')),
+                    DropdownMenuItem(value: 'gain_slow', child: Text('Tăng cân chậm (+250 kcal/ngày)')),
+                    DropdownMenuItem(value: 'gain_normal', child: Text('Tăng cân bình thường (+500 kcal/ngày)')),
                   ],
                   onChanged: (v) => setState(() => _goal = v!),
                 ),
