@@ -19,4 +19,6 @@ public sealed class UpdateProfileFormRequest
     public string? Gender { get; init; }
 
     public int? TargetCalories { get; init; }
+
+    public string? ActivityLevel { get; init; }
 }

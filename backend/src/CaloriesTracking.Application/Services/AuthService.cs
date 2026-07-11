@@ -73,7 +73,8 @@ public sealed class AuthService : IAuthService
     private string GenerateJwtToken(User user)
     {
         var jwtSection = _configuration.GetSection("Jwt");
-        var signingKey = jwtSection["Key"] ?? "DevelopmentOnlySuperSecretKey_ChangeMe_123456789";
+        var signingKey = jwtSection["Key"]
+            ?? throw new InvalidOperationException("Jwt:Key is not configured.");
 
         var claims = new[]
         {

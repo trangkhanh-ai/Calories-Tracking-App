@@ -7,13 +7,8 @@ public sealed class FakeAvatarStorageService : IAvatarStorageService
 {
     public Task<string> UploadAsync(AvatarUploadCandidate file, CancellationToken cancellationToken = default)
     {
-        var extension = Path.GetExtension(file.FileName);
-        if (string.IsNullOrWhiteSpace(extension))
-        {
-            extension = ".png";
-        }
-
-        var url = $"https://cdn.calories-tracking.app/uploads/avatars/{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
+        var seed = Guid.NewGuid().ToString("N").Substring(0, 6);
+        var url = $"https://api.dicebear.com/9.x/avataaars/png?seed=Upload{seed}";
         return Task.FromResult(url);
     }
 }

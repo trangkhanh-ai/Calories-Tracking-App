@@ -24,7 +24,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           password: _passwordController.text,
         );
     if (success) {
-      if (mounted) context.go('/');
+      // Sau khi đăng ký, đưa user đi thiết lập mục tiêu calo trước
+      if (mounted) context.go('/goal-setup');
     } else {
       final error = ref.read(authProvider).error;
       if (mounted) {

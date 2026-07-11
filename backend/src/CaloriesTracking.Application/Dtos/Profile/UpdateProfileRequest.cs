@@ -15,4 +15,7 @@ public sealed class UpdateProfileRequest
     public string? Gender { get; init; }
 
     public int? TargetCalories { get; init; }
+
+    /// <summary>sedentary | light | moderate | active | very_active</summary>
+    public string? ActivityLevel { get; init; }
 }

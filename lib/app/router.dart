@@ -4,6 +4,7 @@ import '../features/home/screens/home_screen.dart';
 import '../features/scanner/screens/camera_scanner_screen.dart';
 import '../features/scanner/screens/results_screen.dart';
 import '../features/scanner/models/food_analysis_result.dart';
+import '../features/profile/screens/goal_setup_screen.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/register_screen.dart';
@@ -45,6 +46,11 @@ final router = GoRouter(
       path: '/profile',
       name: 'profile',
       builder: (context, state) => const ProfileScreen(),
+    ),
+    GoRoute(
+      path: '/goal-setup',
+      name: 'goal-setup',
+      builder: (context, state) => const GoalSetupScreen(),
     ),
     GoRoute(
       path: '/stats',

@@ -6,6 +6,8 @@ import 'app/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // KHÔNG load .env ở client: mọi secret nằm ở backend.
+  // Cấu hình duy nhất của client là BACKEND_BASE_URL qua --dart-define.
   await initializeDateFormatting('vi', null);
   runApp(
     const ProviderScope(

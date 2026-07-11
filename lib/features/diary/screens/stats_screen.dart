@@ -4,15 +4,34 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../app/theme.dart';
-import '../services/diary_api_service.dart';
 import '../models/diary_dto.dart';
 import '../providers/diary_provider.dart';
 
 final weeklyStatsProvider = FutureProvider<List<DailyStatDto>>((ref) async {
-  final api = ref.watch(diaryApiServiceProvider);
+  final storage = ref.watch(localStorageProvider);
+  final entries = await storage.loadEntries();
   final end = DateTime.now();
   final start = end.subtract(const Duration(days: 6));
-  return api.getStats(start, end);
+  
+  final Map<String, double> statsMap = {};
+  for (var entry in entries) {
+    if (entry.date.isAfter(start.subtract(const Duration(days: 1))) && 
+        entry.date.isBefore(end.add(const Duration(days: 1)))) {
+      final dateStr = DateFormat('yyyy-MM-dd').format(entry.date);
+      statsMap[dateStr] = (statsMap[dateStr] ?? 0) + entry.calories.toDouble();
+    }
+  }
+
+  final List<DailyStatDto> stats = [];
+  for (var i = 0; i <= 6; i++) {
+    final date = start.add(Duration(days: i));
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    stats.add(DailyStatDto(
+      date: date,
+      caloriesConsumed: statsMap[dateStr] ?? 0,
+    ));
+  }
+  return stats;
 });
 
 class StatsScreen extends ConsumerWidget {

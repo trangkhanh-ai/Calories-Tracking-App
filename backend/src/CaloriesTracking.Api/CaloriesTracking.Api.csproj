@@ -4,6 +4,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Dev secrets (Gemini key): dotnet user-secrets set "Gemini:ApiKey" "..." -->
+    <UserSecretsId>calories-tracking-api</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

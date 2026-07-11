@@ -12,6 +12,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy seed CSV cạnh binary để chạy được trong Docker -->
+    <None Include="Data\SeedData\usda_calorie_dataset.csv" CopyToOutputDirectory="PreserveNewest" Link="SeedData\usda_calorie_dataset.csv" />
   </ItemGroup>
 
   <PropertyGroup>

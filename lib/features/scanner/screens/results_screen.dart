@@ -8,11 +8,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/food_analysis_result.dart';
 import '../widgets/macro_card.dart';
 import '../../diary/models/food_entry.dart';
-import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
-import '../../diary/screens/stats_screen.dart';
 import '../../../app/theme.dart';
-import '../../../shared/utils/constants.dart';
 import '../../../shared/utils/constants.dart';
 
 class ResultsScreen extends ConsumerStatefulWidget {
@@ -93,18 +90,22 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       'Ăn Vặt': 'Snack'
     };
 
-    final request = LogMealRequest(
-      foodName: combinedName,
-      caloriesPer100g: _totalCalories / (_servingScale == 0 ? 1 : _servingScale),
-      quantity: _servingScale * 100,
-      mealType: mealMap[_selectedMeal] ?? 'Snack',
+    final entry = FoodEntry(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: combinedName,
+      calories: _totalCalories.round(),
+      proteinG: _totalProtein,
+      carbsG: _totalCarbs,
+      fatG: _totalFat,
       date: DateTime.now(),
+      mealType: mealMap[_selectedMeal] ?? 'Snack',
+      imagePath: widget.result.imagePath,
     );
 
     try {
-      await ref.read(diaryApiServiceProvider).logMeal(request);
+      await ref.read(localStorageProvider).addEntry(entry);
       ref.invalidate(dailyDiaryProvider);
-      ref.invalidate(weeklyStatsProvider);
+      // ref.invalidate(weeklyStatsProvider); // TODO: implement local stats
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

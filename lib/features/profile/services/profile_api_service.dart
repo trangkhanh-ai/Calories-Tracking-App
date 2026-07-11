@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../core/network/api_client.dart';
 
 class ProfileApiService {
@@ -20,29 +19,28 @@ class ProfileApiService {
     required double weight,
     required int age,
     required String gender,
-    required int targetCalories,
-    XFile? avatarFile,
+    int? targetCalories,
     String? defaultAvatarUrl,
+    String? activityLevel,
   }) async {
     try {
       final mapData = <String, dynamic>{
         'DisplayName': displayName,
-        'Height': height.toInt().toString(),
-        'Weight': weight.toInt().toString(),
+        'Height': height.toString(),
+        'Weight': weight.toString(),
         'Age': age.toString(),
         'Gender': gender,
-        'TargetCalories': targetCalories.toString(),
       };
+
+      if (targetCalories != null) {
+        mapData['TargetCalories'] = targetCalories.toString();
+      }
 
       if (defaultAvatarUrl != null) {
         mapData['DefaultAvatarUrl'] = defaultAvatarUrl;
       }
-
-      if (avatarFile != null) {
-        mapData['AvatarFile'] = await MultipartFile.fromBytes(
-          await avatarFile.readAsBytes(),
-          filename: avatarFile.name,
-        );
+      if (activityLevel != null) {
+        mapData['ActivityLevel'] = activityLevel;
       }
 
       final formData = FormData.fromMap(mapData);
@@ -56,6 +54,22 @@ class ProfileApiService {
     } catch (e) {
       print('Update Profile Error: $e');
       rethrow;
+    }
+  }
+
+  /// Backend tính BMI/BMR/TDEE/calo khuyến nghị từ hồ sơ đã lưu.
+  /// [goal]: 'lose' | 'maintain' | 'gain'
+  Future<Map<String, dynamic>?> getCalorieGoal({String? goal}) async {
+    try {
+      final response = await apiClient.get(
+        '/profile/calorie-goal',
+        queryParameters: goal != null ? {'goal': goal} : null,
+      );
+      if (response.statusCode == 200) return response.data;
+      return null;
+    } catch (e) {
+      print('Get Calorie Goal Error: $e');
+      return null;
     }
   }
 

@@ -1,80 +1,96 @@
 # Đặc tả API: Tính năng Phân tích Thức ăn (Food Analysis API Spec)
 
-Tài liệu này được xây dựng dựa trên phương pháp **Spec-Driven Development (SDD)**. Nó đóng vai trò là "nguồn chân lý duy nhất" (Single Source of Truth) định nghĩa cấu trúc dữ liệu giao tiếp giữa Ứng dụng Di động (Client) và AI Model (Gemini Vision API).
+Tài liệu này được xây dựng theo phương pháp **Spec-Driven Development (SDD)** — là "nguồn chân lý duy nhất" (Single Source of Truth) cho cấu trúc dữ liệu giữa Client (Flutter), Backend (.NET) và AI Model (Gemini Vision).
+
+> Spec này được đồng bộ 1:1 với code thật:
+> - Client model: `lib/features/scanner/models/food_analysis_result.dart`
+> - Backend DTO: `backend/src/CaloriesTracking.Application/Dtos/Analysis/FoodAnalysisDtos.cs`
+> - Backend service (prompt): `backend/src/CaloriesTracking.Infrastructure/Services/GeminiFoodAnalysisService.cs`
 
 ---
 
 ## 1. Tổng quan
-- **Chức năng:** Nhận hình ảnh thức ăn từ người dùng (chụp qua Camera hoặc tải lên từ thư viện) và trả về thông tin dinh dưỡng chi tiết.
-- **Phương thức gọi:** Hệ thống gửi ảnh dạng Base64 kèm Prompt (hướng dẫn) tới dịch vụ Gemini AI.
-- **Định dạng dữ liệu trả về (Output Format):** Bắt buộc trả về định dạng `application/json`.
 
----
+- **Endpoint:** `POST /api/analysis/food` (yêu cầu JWT — header `Authorization: Bearer <token>`)
+- **Luồng:** Client gửi ảnh base64 → Backend nén ảnh (resize 800px, JPEG q70) → gọi Gemini với prompt cố định, `responseMimeType: application/json` → trả JSON về client.
+- **Client không gọi Gemini trực tiếp** — API key chỉ tồn tại ở backend.
+
+### Request
+
+```json
+{
+  "imageBase64": "<ảnh JPEG/PNG/WebP mã hóa base64>"
+}
+```
 
 ## 2. Đặc tả JSON Trả về (Response Schema)
-
-AI **bắt buộc** phải trả về một Object JSON với cấu trúc chính xác như sau:
 
 ```json
 {
   "food_detected": true,
-  "image_quality": "good",
-  "total_calories": 450,
-  "total_protein": 25.5,
-  "total_carbs": 40.0,
-  "total_fat": 15.0,
   "items": [
     {
-      "name": "Tên món ăn (vd: Phở Bò)",
-      "confidence": 0.95,
-      "calories": 400,
-      "protein": 20.0,
-      "serving_size": "1 bát"
+      "name": "Phở Bò",
+      "name_en": "Beef Pho",
+      "serving_size": "1 bát / 350g",
+      "calories": 350,
+      "protein_g": 15.5,
+      "carbs_g": 45.0,
+      "fat_g": 8.2,
+      "confidence": 0.92
     }
   ],
-  "health_tips": "Mẹo sức khỏe ngắn gọn về bữa ăn này."
+  "image_quality": "good",
+  "notes": "Ghi chú bổ sung nếu có"
 }
 ```
 
-### 2.1. Giải thích các trường dữ liệu (Field Definitions)
+### 2.1. Trường cấp cao nhất
 
-Tất cả các trường dữ liệu dưới đây phải luôn tồn tại trong kết quả JSON trả về. Nếu không có dữ liệu, sử dụng giá trị mặc định (như `0` hoặc mảng rỗng `[]`).
-
-| Tên trường (Field) | Kiểu dữ liệu | Bắt buộc | Ý nghĩa |
+| Field | Kiểu | Bắt buộc | Ý nghĩa |
 | :--- | :--- | :---: | :--- |
-| `food_detected` | `boolean` | Có | `true` nếu hình ảnh có chứa đồ ăn/thức uống. `false` nếu AI phát hiện ảnh không phải thức ăn (vd: ảnh phong cảnh). |
-| `image_quality` | `string` | Có | Chất lượng của bức ảnh. Các giá trị hợp lệ: `"good"`, `"low_light"`, `"blurry"`. |
-| `total_calories` | `number` | Có | Tổng lượng Calo ước tính. (Đơn vị: kcal) |
-| `total_protein` | `number` | Có | Tổng lượng Protein ước tính. (Đơn vị: gam) |
-| `total_carbs` | `number` | Có | Tổng lượng Carbohydrate ước tính. (Đơn vị: gam) |
-| `total_fat` | `number` | Có | Tổng lượng Chất béo ước tính. (Đơn vị: gam) |
-| `items` | `array` | Có | Danh sách các món ăn. Nếu `food_detected = false`, mảng này có thể rỗng `[]`. |
-| `health_tips` | `string` | Có | Lời khuyên ngắn gọn dựa trên thành phần dinh dưỡng của bữa ăn. |
+| `food_detected` | `boolean` | Có | `true` nếu ảnh có đồ ăn/thức uống; `false` nếu không (vd: ảnh phong cảnh). |
+| `items` | `array` | Có | Danh sách món ăn. Rỗng `[]` khi `food_detected = false`. |
+| `image_quality` | `string` | Có | `"good"` \| `"low_light"` \| `"blurry"` \| `"too_far"`. |
+| `notes` | `string` | Có | Ghi chú/lời khuyên ngắn của AI (chuỗi rỗng nếu không có). |
 
-### 2.2. Chi tiết của đối tượng trong mảng `items`
+> **Lưu ý:** Không có trường `total_*` — client tự cộng tổng từ `items`. Không có `health_tips` — dùng `notes`.
 
-| Tên trường | Kiểu dữ liệu | Ý nghĩa |
+### 2.2. Trường trong mỗi phần tử `items`
+
+| Field | Kiểu | Ý nghĩa |
 | :--- | :--- | :--- |
-| `name` | `string` | Tên món ăn bằng tiếng Việt (vd: "Phở Bò"). |
-| `confidence` | `number` | Độ tự tin của AI về nhận định này (0.0 đến 1.0). |
-| `calories` | `number` | Lượng Calo của món này. |
-| `protein` | `number` | Lượng Protein của món này. |
-| `serving_size` | `string` | Khẩu phần ước lượng (vd: "1 bát", "100g"). |
+| `name` | `string` | Tên món bằng tiếng Việt (vd: "Phở Bò"). |
+| `name_en` | `string` | Tên tiếng Anh. |
+| `serving_size` | `string` | Khẩu phần ước lượng (vd: "1 bát", "300g"). |
+| `calories` | `number` | Calo của món này (kcal, cho 1 khẩu phần). |
+| `protein_g` | `number` | Protein (gam). |
+| `carbs_g` | `number` | Carbohydrate (gam). |
+| `fat_g` | `number` | Chất béo (gam). |
+| `confidence` | `number` | Độ tự tin của AI (0.0 – 1.0). |
+
+Mọi trường luôn tồn tại; thiếu dữ liệu thì dùng mặc định (`0`, `""`, `[]`) — client parse với null-safety fallback nên không bao giờ crash.
 
 ---
 
 ## 3. Các kịch bản xử lý (Behavioral Scenarios)
 
-Dựa trên Spec, phía Front-end (Giao diện) tuân thủ các quy tắc hiển thị sau:
-
 ### Kịch bản 1: Không tìm thấy thức ăn
 - **Điều kiện:** `food_detected == false`
-- **Hành động (Client):** Giao diện chặn không cho chuyển sang màn hình Kết quả. Hiển thị Dialog: *"Không tìm thấy thức ăn trong ảnh"*.
+- **Client:** chặn chuyển sang màn Kết quả, hiển thị Dialog *"Không tìm thấy thức ăn trong ảnh"*.
 
-### Kịch bản 2: Ảnh thiếu sáng / Mờ
-- **Điều kiện:** `image_quality == "low_light"` hoặc `"blurry"`
-- **Hành động (Client):** Hiển thị thêm một Cảnh báo (Warning SnackBar): *"Ảnh hơi tối — kết quả có thể kém chính xác hơn"*.
+### Kịch bản 2: Ảnh thiếu sáng / mờ / quá xa
+- **Điều kiện:** `image_quality ∈ {"low_light", "blurry", "too_far"}`
+- **Client:** hiển thị Warning SnackBar *"Ảnh hơi tối — kết quả có thể kém chính xác hơn"*.
 
-### Kịch bản 3: Xử lý ngoại lệ (Fallback)
-- **Điều kiện:** AI trả về JSON lỗi cú pháp.
-- **Hành động (Client):** Bắt lỗi (Try-Catch) và thông báo yêu cầu thử lại, không được crash app.
+### Kịch bản 3: Lỗi ngoại lệ (Fallback)
+- **Điều kiện:** backend trả lỗi (401/500) hoặc JSON sai cú pháp.
+- **Client:** retry tối đa 3 lần (backoff 2s/4s), sau đó báo lỗi yêu cầu thử lại — không crash app.
+
+### Mã lỗi backend
+
+| HTTP | Điều kiện |
+| :--- | :--- |
+| `400` | Thiếu `imageBase64` hoặc không phải base64 hợp lệ. |
+| `401` | Thiếu/sai JWT. |
+| `500` | Gemini lỗi hoặc không parse được kết quả — body: `{"error": "Failed to analyze image"}`. |

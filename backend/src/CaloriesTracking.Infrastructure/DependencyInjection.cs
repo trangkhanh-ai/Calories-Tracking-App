@@ -27,6 +27,11 @@ public static class DependencyInjection
         services.AddScoped<IDailyLogRepository, DailyLogRepository>();
         services.AddScoped<IAvatarStorageService, FakeAvatarStorageService>();
 
+        services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
         return services;
     }
 }
