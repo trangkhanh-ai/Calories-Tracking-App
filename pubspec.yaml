@@ -58,6 +58,7 @@ dependencies:
   dio: ^5.9.2
   fl_chart: ^0.68.0
   google_generative_ai: ^0.4.7
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

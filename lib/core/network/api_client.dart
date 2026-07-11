@@ -29,10 +29,14 @@ class ApiClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString('jwt_token');
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final token = prefs.getString('jwt_token');
+            if (token != null && token.isNotEmpty) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+          } catch (_) {
+            // Ignore shared preferences failures in tests/offline contexts.
           }
           print('--> ${options.method} ${options.uri}');
           return handler.next(options);

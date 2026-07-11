@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../app/theme.dart';
 import '../models/food_nutrition_item.dart';
@@ -29,6 +30,8 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
   bool _isLoading = true;
   bool _isSearching = false;
   String? _errorMessage;
+  String _selectedCategory = '';
+  double? _maxCalories;
 
   @override
   void initState() {
@@ -73,9 +76,13 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
       _isSearching = true;
       _errorMessage = null;
     });
-    
+
     try {
-      final results = await _service.searchFoods(query);
+      final results = await _service.searchFoods(
+        query,
+        category: _selectedCategory.isEmpty ? null : _selectedCategory,
+        maxCalories: _maxCalories,
+      );
       setState(() {
         _suggestions = results;
         _isSearching = false;
@@ -141,6 +148,18 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _FilterChip(label: 'All', selected: _selectedCategory.isEmpty, onTap: () => _applyCategoryFilter('')),
+                      _FilterChip(label: 'Vietnamese', selected: _selectedCategory == 'Vietnamese', onTap: () => _applyCategoryFilter('Vietnamese')),
+                      _FilterChip(label: 'Proteins', selected: _selectedCategory == 'Proteins', onTap: () => _applyCategoryFilter('Proteins')),
+                      _FilterChip(label: 'Fruit', selected: _selectedCategory == 'Fruit', onTap: () => _applyCategoryFilter('Fruit')),
+                      _FilterChip(label: '<= 500 kcal', selected: _maxCalories != null, onTap: () => _applyCalorieFilter(_maxCalories == null ? 500 : null)),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   if (_errorMessage != null)
                     Padding(
@@ -194,6 +213,33 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                                   ),
                                   child: Row(
                                     children: [
+                                      if (food.imageUrl.isNotEmpty)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: CachedNetworkImage(
+                                            imageUrl: food.imageUrl,
+                                            width: 56,
+                                            height: 56,
+                                            fit: BoxFit.cover,
+                                            placeholder: (context, _) => const SizedBox(
+                                              width: 56,
+                                              height: 56,
+                                              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                            ),
+                                            errorWidget: (context, _, __) => const Icon(Icons.image_not_supported_rounded),
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          width: 56,
+                                          height: 56,
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.surfaceVariant,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(Icons.restaurant_rounded),
+                                        ),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,7 +254,7 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              food.sourceType,
+                                              '${food.category} • ${food.sourceType}',
                                               style: GoogleFonts.outfit(
                                                 fontSize: 12,
                                                 color: AppTheme.onSurface,
@@ -258,6 +304,20 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _applyCategoryFilter(String category) async {
+    setState(() {
+      _selectedCategory = category;
+    });
+    await _performSearch(_searchController.text);
+  }
+
+  Future<void> _applyCalorieFilter(double? maxCalories) async {
+    setState(() {
+      _maxCalories = maxCalories;
+    });
+    await _performSearch(_searchController.text);
   }
 
   Widget _buildSelectedFoodCard(FoodNutritionItem food) {
@@ -351,7 +411,8 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
             ));
             ref.invalidate(dailyDiaryProvider);
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(
                 SnackBar(
                   content: Text('${food.name} added to $mealType!'),
                   backgroundColor: AppTheme.primaryDark,
@@ -360,7 +421,8 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
             }
           } catch (e) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(
                 SnackBar(
                   content: Text('Failed to add to diary.'),
                   backgroundColor: AppTheme.error,
@@ -376,6 +438,37 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
   String _formatValue(double? value, {String unit = 'g'}) {
     if (value == null) return 'N/A';
     return '${value.toStringAsFixed(1)} $unit';
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.primary.withAlpha(40) : AppTheme.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppTheme.primary : Colors.transparent),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? AppTheme.primaryDark : AppTheme.onSurface,
+          ),
+        ),
+      ),
+    );
   }
 }
 

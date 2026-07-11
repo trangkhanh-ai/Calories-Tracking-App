@@ -13,10 +13,25 @@ void main() {
       final service = FoodSearchService(csvContent: csv);
       await service.loadFoods();
 
-      final results = service.searchFoods('ban');
+      final results = await service.searchFoods('ban');
 
       expect(results, hasLength(1));
       expect(results.first.name, 'Banana');
+    });
+
+    test('supports category and calorie filtering for Vietnamese dishes', () async {
+      final service = FoodSearchService();
+      await service.loadFoods();
+
+      final results = await service.searchFoods(
+        'pho',
+        category: 'Vietnamese',
+        maxCalories: 500,
+      );
+
+      expect(results, isNotEmpty);
+      expect(results.first.name, contains('Pho'));
+      expect(results.first.category, 'Vietnamese');
     });
   });
 }
