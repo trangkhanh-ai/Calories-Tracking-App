@@ -5,4 +5,7 @@
     <Project Path="src/CaloriesTracking.Domain/CaloriesTracking.Domain.csproj" />
     <Project Path="src/CaloriesTracking.Infrastructure/CaloriesTracking.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CaloriesTracking.Application.Tests/CaloriesTracking.Application.Tests.csproj" />
+  </Folder>
 </Solution>
