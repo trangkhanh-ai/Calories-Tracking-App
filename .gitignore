@@ -92,3 +92,5 @@ lib/shared/utils/constants.dart
 data/usda/
 .env
 scripts/node_modules/
+/android/build/
+/android/.gradle/
