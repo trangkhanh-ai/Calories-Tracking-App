@@ -1,0 +1,35 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Matches TargetFramework net9.0 in backend projects
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        run: dotnet restore backend/CaloriesTracking.slnx
+
+      - name: Build (Release)
+        run: >
+          dotnet build backend/CaloriesTracking.slnx
+          --configuration Release
+          --no-restore
+
+      - name: Test (Release)
+        run: >
+          dotnet test backend/CaloriesTracking.slnx
+          --configuration Release
+          --no-build
+          --verbosity normal
