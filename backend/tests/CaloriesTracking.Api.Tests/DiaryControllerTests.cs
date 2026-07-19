@@ -39,12 +39,17 @@ public sealed class DiaryControllerTests
         Assert.Equal(0, diaryService.LogMealCallCount);
     }
 
-    [Fact]
-    public async Task LogMeal_WhenQuantityIsPositive_ReturnsOkAndCallsServiceWithOriginalRequest()
+    [Theory]
+    [InlineData("Breakfast")]
+    [InlineData("Lunch")]
+    [InlineData("Dinner")]
+    [InlineData("Snack")]
+    public async Task LogMeal_WhenMealTypeIsCanonical_ReturnsOkAndCallsServiceWithOriginalRequest(
+        string mealType)
     {
         var diaryService = new FakeDiaryService();
         var controller = CreateController(diaryService);
-        var request = CreateRequest(quantity: 125.75m);
+        var request = CreateRequest(quantity: 125.75m) with { MealType = mealType };
 
         var actionResult = await controller.LogMeal(request, CancellationToken.None);
 
@@ -55,6 +60,56 @@ public sealed class DiaryControllerTests
         Assert.Equal(42, diaryService.LoggedUserId);
         Assert.Same(request, diaryService.LoggedRequest);
     }
+
+    [Theory]
+    [MemberData(nameof(InvalidMealTypes))]
+    public async Task LogMeal_WhenMealTypeIsNotCanonical_ReturnsBadRequestWithoutCallingService(
+        string mealType)
+    {
+        var diaryService = new FakeDiaryService();
+        var controller = CreateController(diaryService);
+        var request = CreateRequest(quantity: 125.75m) with { MealType = mealType };
+
+        var actionResult = await controller.LogMeal(request, CancellationToken.None);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult);
+        Assert.Equal(StatusCodes.Status400BadRequest, badRequest.StatusCode);
+        Assert.Equal(
+            "MealType must be one of: Breakfast, Lunch, Dinner, Snack.",
+            GetMessage(badRequest.Value));
+        Assert.Equal(0, diaryService.LogMealCallCount);
+        Assert.Null(diaryService.LoggedRequest);
+    }
+
+    [Fact]
+    public async Task LogMeal_WhenQuantityAndMealTypeAreInvalid_PreservesQuantityValidationPrecedence()
+    {
+        var diaryService = new FakeDiaryService();
+        var controller = CreateController(diaryService);
+        var request = CreateRequest(quantity: 0m) with { MealType = "Brunch" };
+
+        var actionResult = await controller.LogMeal(request, CancellationToken.None);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(actionResult);
+        Assert.Equal(StatusCodes.Status400BadRequest, badRequest.StatusCode);
+        Assert.Equal("Quantity must be greater than zero.", GetMessage(badRequest.Value));
+        Assert.Equal(0, diaryService.LogMealCallCount);
+    }
+
+    public static IEnumerable<object[]> InvalidMealTypes() =>
+    [
+        [""],
+        ["   "],
+        ["breakfast"],
+        ["BREAKFAST"],
+        ["BreakFast"],
+        [" Breakfast"],
+        ["Breakfast "],
+        ["Break fast"],
+        ["Brunch"],
+        [new string('X', 51)],
+        ["Breakf\u0430st"]
+    ];
 
     private static DiaryController CreateController(IDiaryService diaryService)
     {

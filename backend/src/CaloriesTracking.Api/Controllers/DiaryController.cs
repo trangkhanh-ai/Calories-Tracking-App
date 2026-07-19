@@ -11,6 +11,14 @@ namespace CaloriesTracking.Api.Controllers;
 [Authorize]
 public class DiaryController : ControllerBase
 {
+    private static readonly HashSet<string> AllowedMealTypes = new(StringComparer.Ordinal)
+    {
+        "Breakfast",
+        "Lunch",
+        "Dinner",
+        "Snack"
+    };
+
     private readonly IDiaryService _diaryService;
 
     public DiaryController(IDiaryService diaryService)
@@ -44,6 +52,9 @@ public class DiaryController : ControllerBase
 
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than zero." });
+
+        if (request.MealType is null || !AllowedMealTypes.Contains(request.MealType))
+            return BadRequest(new { message = "MealType must be one of: Breakfast, Lunch, Dinner, Snack." });
 
         await _diaryService.LogMealAsync(userId, request, cancellationToken);
         return Ok(new { message = "Meal logged successfully." });
