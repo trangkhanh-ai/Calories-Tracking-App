@@ -42,6 +42,9 @@ public class DiaryController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == 0) return Unauthorized();
 
+        if (request.Quantity <= 0)
+            return BadRequest(new { message = "Quantity must be greater than zero." });
+
         await _diaryService.LogMealAsync(userId, request, cancellationToken);
         return Ok(new { message = "Meal logged successfully." });
     }

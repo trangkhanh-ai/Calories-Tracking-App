@@ -6,6 +6,7 @@
     <Project Path="src/CaloriesTracking.Infrastructure/CaloriesTracking.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/CaloriesTracking.Api.Tests/CaloriesTracking.Api.Tests.csproj" />
     <Project Path="tests/CaloriesTracking.Application.Tests/CaloriesTracking.Application.Tests.csproj" />
   </Folder>
 </Solution>
