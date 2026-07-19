@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Backend .NET (CaloriesTracking.Api). Debug bang C# debugger (coreclr).
+      // Khong hardcode secret: Jwt:Key / Gemini:ApiKey doc tu user-secrets / env.
+      // DOTNET_ROLL_FORWARD: project target net9.0 nhung may chi co runtime .NET 10.
+      "name": "CalTrack: Backend",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "caltrack-backend-build",
+      "program": "${workspaceFolder}/backend/src/CaloriesTracking.Api/bin/Debug/net9.0/CaloriesTracking.Api.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend/src/CaloriesTracking.Api",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5210",
+        "DOTNET_ROLL_FORWARD": "LatestMajor"
+      }
+    },
+    {
+      // Flutter Web tren Chrome. Dart/Flutter extension quan ly process + hot reload.
+      // preLaunchTask cho backend /health truoc khi mo trinh duyet (tranh loi CORS/network).
+      "name": "CalTrack: Flutter Web",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "caltrack-wait-backend",
+      "deviceId": "chrome",
+      "toolArgs": [
+        "--web-hostname",
+        "127.0.0.1",
+        "--web-port",
+        "54321",
+        "--dart-define=BACKEND_BASE_URL=http://localhost:5210"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      // Bam F5 voi cau hinh nay de chay ca backend + Flutter Web.
+      // stopAll: dung debug se dung ca hai process do cau hinh nay tao ra.
+      "name": "CalTrack: Full Stack",
+      "configurations": ["CalTrack: Backend", "CalTrack: Flutter Web"],
+      "stopAll": true,
+      "presentation": {
+        "group": "caltrack",
+        "order": 1
+      }
+    }
+  ]
+}

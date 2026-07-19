@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Build backend API trước khi debug. TargetFramework net9.0 build được bằng SDK 10.
+      "label": "caltrack-backend-build",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/backend/src/CaloriesTracking.Api/CaloriesTracking.Api.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      // Readiness gate: chờ /health trả HTTP 200 trước khi mở Flutter Web.
+      // Poll ngắn, timeout hữu hạn 45s, không vòng lặp vô hạn, không in secret.
+      "label": "caltrack-wait-backend",
+      "type": "shell",
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "$deadline=(Get-Date).AddSeconds(45); $ok=$false; while((Get-Date) -lt $deadline){ try{ $r=Invoke-WebRequest -Uri 'http://localhost:5210/health' -UseBasicParsing -TimeoutSec 2; if($r.StatusCode -eq 200){ $ok=$true; break } }catch{}; Start-Sleep -Milliseconds 750 }; if(-not $ok){ Write-Error 'Backend chua san sang tai http://localhost:5210/health trong 45s. Kiem tra Debug Console cua CalTrack: Backend (vi du port 5210 dang ban hoac thieu Jwt:Key user-secret).'; exit 1 }; Write-Host 'Backend ready: HTTP 200 tai http://localhost:5210/health.'"
+        ]
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
