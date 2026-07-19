@@ -41,7 +41,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final saved = await ref.read(authProvider.notifier).loadRememberedUsername();
+    final saved = await ref
+        .read(authProvider.notifier)
+        .loadRememberedUsername();
     if (saved != null && mounted) {
       setState(() {
         _savedUsername = saved;
@@ -66,10 +68,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final username = _usernameController.text;
     final password = _passwordController.text;
 
-    final success = await ref.read(authProvider.notifier).login(
-          username,
-          password,
-        );
+    final success = await ref
+        .read(authProvider.notifier)
+        .login(username, password);
     if (success) {
       // Lưu hoặc xóa tên đăng nhập tùy theo checkbox
       if (_rememberMe) {
@@ -91,9 +92,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } else {
       final error = ref.read(authProvider).error;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error ?? 'Login failed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error ?? 'Login failed')));
       }
     }
   }
@@ -118,10 +119,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
-                  )
+                  ),
                 ],
               ),
               child: Column(
@@ -130,7 +131,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   const Text(
                     'Đăng Nhập',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2C3E50),
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
@@ -149,7 +154,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         },
                         decoration: InputDecoration(
                           labelText: 'Tên đăng nhập',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           filled: true,
                           fillColor: const Color(0xFFF8F9FA),
                         ),
@@ -165,7 +172,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             border: Border.all(color: const Color(0xFFE2E8F0)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
+                                color: Colors.black.withValues(alpha: 0.08),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -177,22 +184,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               borderRadius: BorderRadius.circular(12),
                               onTap: _applySavedCredentials,
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                                 child: Row(
                                   children: [
                                     Container(
                                       width: 36,
                                       height: 36,
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF2ECC71).withOpacity(0.15),
+                                        color: const Color(
+                                          0xFF2ECC71,
+                                        ).withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: const Icon(Icons.person_rounded, color: Color(0xFF2ECC71), size: 20),
+                                      child: const Icon(
+                                        Icons.person_rounded,
+                                        color: Color(0xFF2ECC71),
+                                        size: 20,
+                                      ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             _savedUsername!,
@@ -204,12 +221,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                           ),
                                           const Text(
                                             'Tài khoản đã lưu • Bấm để điền nhanh',
-                                            style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF94A3B8),
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
+                                    const Icon(
+                                      Icons.arrow_forward_ios_rounded,
+                                      size: 14,
+                                      color: Color(0xFF94A3B8),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -225,7 +249,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     obscureText: true,
                     decoration: InputDecoration(
                       labelText: 'Mật khẩu',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       filled: true,
                       fillColor: const Color(0xFFF8F9FA),
                     ),
@@ -239,9 +265,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         height: 24,
                         child: Checkbox(
                           value: _rememberMe,
-                          onChanged: (value) => setState(() => _rememberMe = value ?? false),
+                          onChanged: (value) =>
+                              setState(() => _rememberMe = value ?? false),
                           activeColor: const Color(0xFF2ECC71),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -249,7 +278,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onTap: () => setState(() => _rememberMe = !_rememberMe),
                         child: const Text(
                           'Nhớ tài khoản',
-                          style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF64748B),
+                          ),
                         ),
                       ),
                     ],
@@ -260,11 +292,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: const Color(0xFF2ECC71),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: authState.isLoading
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white))
-                        : const Text('ĐĂNG NHẬP', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'ĐĂNG NHẬP',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
@@ -272,9 +319,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: const BorderSide(color: Color(0xFF2ECC71)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('BỎ QUA ĐĂNG NHẬP (tạm thời)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF2ECC71))),
+                    child: const Text(
+                      'BỎ QUA ĐĂNG NHẬP (tạm thời)',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2ECC71),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   TextButton(

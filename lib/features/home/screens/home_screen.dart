@@ -28,13 +28,15 @@ class HomeScreen extends ConsumerWidget {
           final todayCalories = dailyData.totalCaloriesConsumed.toInt();
           final dailyGoal = dailyData.targetCalories.toInt();
           final remaining = dailyGoal - todayCalories;
-          final percentage = dailyGoal == 0 ? 0.0 : (todayCalories / dailyGoal).clamp(0.0, 1.0);
+          final percentage = dailyGoal == 0
+              ? 0.0
+              : (todayCalories / dailyGoal).clamp(0.0, 1.0);
           final calorieColor = percentage < 0.75
               ? AppTheme.calorieGood
               : percentage < 1.0
-                  ? AppTheme.calorieMid
-                  : AppTheme.calorieOver;
-                  
+              ? AppTheme.calorieMid
+              : AppTheme.calorieOver;
+
           final allEntries = [
             ...dailyData.breakfast,
             ...dailyData.lunch,
@@ -78,13 +80,14 @@ class HomeScreen extends ConsumerWidget {
                             color: AppTheme.onBackground.withAlpha(10),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
-                          )
+                          ),
                         ],
                       ),
                       child: profileAsync.when(
                         data: (profile) {
                           final avatarUrl = profile?['avatarUrl'];
-                          if (avatarUrl != null && avatarUrl.toString().isNotEmpty) {
+                          if (avatarUrl != null &&
+                              avatarUrl.toString().isNotEmpty) {
                             return InkWell(
                               onTap: () => context.pushNamed('profile'),
                               customBorder: const CircleBorder(),
@@ -96,26 +99,45 @@ class HomeScreen extends ConsumerWidget {
                             );
                           }
                           return IconButton(
-                            icon: const Icon(Icons.person, color: AppTheme.primary),
+                            icon: const Icon(
+                              Icons.person,
+                              color: AppTheme.primary,
+                            ),
                             onPressed: () => context.pushNamed('profile'),
                           );
                         },
                         loading: () => const Padding(
                           padding: EdgeInsets.all(12.0),
-                          child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.primary,
+                            ),
+                          ),
                         ),
-                        error: (_, __) => IconButton(
-                          icon: const Icon(Icons.person, color: AppTheme.primary),
+                        error: (_, _) => IconButton(
+                          icon: const Icon(
+                            Icons.person,
+                            color: AppTheme.primary,
+                          ),
                           onPressed: () => context.pushNamed('profile'),
                         ),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.bar_chart, color: AppTheme.primary),
+                      icon: const Icon(
+                        Icons.bar_chart,
+                        color: AppTheme.primary,
+                      ),
                       onPressed: () => context.pushNamed('stats'),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.search_rounded, color: AppTheme.primary),
+                      icon: const Icon(
+                        Icons.search_rounded,
+                        color: AppTheme.primary,
+                      ),
                       onPressed: () => context.pushNamed('food-search'),
                     ),
                   ],
@@ -128,12 +150,15 @@ class HomeScreen extends ConsumerWidget {
                   delegate: SliverChildListDelegate([
                     // ─── Calorie Ring Card ──────────────────────────────
                     _CalorieRingCard(
-                      todayCalories: todayCalories,
-                      dailyGoal: dailyGoal,
-                      remaining: remaining,
-                      percentage: percentage,
-                      calorieColor: calorieColor,
-                    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
+                          todayCalories: todayCalories,
+                          dailyGoal: dailyGoal,
+                          remaining: remaining,
+                          percentage: percentage,
+                          calorieColor: calorieColor,
+                        )
+                        .animate()
+                        .fadeIn(duration: 400.ms)
+                        .slideY(begin: 0.1, end: 0),
                     const SizedBox(height: 20),
 
                     // ─── Meal Breakdown ─────────────────────────────────
@@ -154,14 +179,20 @@ class HomeScreen extends ConsumerWidget {
                     ).animate().fadeIn(duration: 400.ms, delay: 200.ms),
                     const SizedBox(height: 12),
                     if (allEntries.isEmpty)
-                      _EmptyState().animate().fadeIn(duration: 400.ms, delay: 300.ms)
+                      _EmptyState().animate().fadeIn(
+                        duration: 400.ms,
+                        delay: 300.ms,
+                      )
                     else
                       ...allEntries.asMap().entries.map((e) {
                         final index = e.key;
                         final entry = e.value;
                         return _FoodEntryTile(entry: entry)
                             .animate()
-                            .fadeIn(duration: 400.ms, delay: (300 + index * 50).ms)
+                            .fadeIn(
+                              duration: 400.ms,
+                              delay: (300 + index * 50).ms,
+                            )
                             .slideX(begin: 0.1, end: 0);
                       }),
                   ]),
@@ -171,7 +202,10 @@ class HomeScreen extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: _ScanFAB().animate().scale(delay: 500.ms, duration: 400.ms),
+      floatingActionButton: _ScanFAB().animate().scale(
+        delay: 500.ms,
+        duration: 400.ms,
+      ),
     );
   }
 }
@@ -322,7 +356,11 @@ class _StatRow extends StatelessWidget {
       children: [
         Text(
           label,
-          style: GoogleFonts.outfit(color: AppTheme.onSurface, fontSize: 14, fontWeight: FontWeight.w500),
+          style: GoogleFonts.outfit(
+            color: AppTheme.onSurface,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         Text(
           value,
@@ -344,7 +382,10 @@ class _MealBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bfCal = dailyData.breakfast.fold<double>(0, (sum, e) => sum + e.calories);
+    final bfCal = dailyData.breakfast.fold<double>(
+      0,
+      (sum, e) => sum + e.calories,
+    );
     final lCal = dailyData.lunch.fold<double>(0, (sum, e) => sum + e.calories);
     final dCal = dailyData.dinner.fold<double>(0, (sum, e) => sum + e.calories);
     final sCal = dailyData.snacks.fold<double>(0, (sum, e) => sum + e.calories);
@@ -444,10 +485,7 @@ class _MealSlot extends StatelessWidget {
           ),
           Text(
             'kcal',
-            style: GoogleFonts.outfit(
-              color: AppTheme.onSurface,
-              fontSize: 11,
-            ),
+            style: GoogleFonts.outfit(color: AppTheme.onSurface, fontSize: 11),
           ),
         ],
       ),
@@ -509,7 +547,10 @@ class _FoodEntryTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.primary.withAlpha(20),
                     borderRadius: BorderRadius.circular(8),

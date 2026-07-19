@@ -66,8 +66,8 @@ class _CaptureButtonState extends State<CaptureButton>
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: widget.isProcessing
-                      ? AppTheme.primary.withOpacity(0.4)
-                      : Colors.white.withOpacity(0.8),
+                      ? AppTheme.primary.withValues(alpha: 0.4)
+                      : Colors.white.withValues(alpha: 0.8),
                   width: 3,
                 ),
               ),
@@ -79,7 +79,7 @@ class _CaptureButtonState extends State<CaptureButton>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.isProcessing
-                    ? AppTheme.primary.withOpacity(0.5)
+                    ? AppTheme.primary.withValues(alpha: 0.5)
                     : Colors.white,
               ),
               child: widget.isProcessing
@@ -87,8 +87,7 @@ class _CaptureButtonState extends State<CaptureButton>
                       padding: EdgeInsets.all(16),
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
                   : null,

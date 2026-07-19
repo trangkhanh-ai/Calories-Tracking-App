@@ -3,7 +3,7 @@ import '../../../core/network/api_client.dart';
 import '../models/food_nutrition_item.dart';
 
 class FoodSearchService {
-  FoodSearchService({String? csvContent}) : _csvContent = csvContent;
+  FoodSearchService({this._csvContent});
 
   static final instance = FoodSearchService();
   final String? _csvContent;
@@ -12,22 +12,21 @@ class FoodSearchService {
   Future<void> loadFoods() async {
     if (_foods.isNotEmpty) return;
 
-    if (_csvContent != null && _csvContent!.trim().isNotEmpty) {
-      _foods = _parseCsv(_csvContent!);
+    if (_csvContent != null && _csvContent.trim().isNotEmpty) {
+      _foods = _parseCsv(_csvContent);
       return;
     }
 
     try {
       final response = await apiClient.get(
         '/food/search',
-        queryParameters: {
-          'query': '',
-          'limit': 50,
-        },
+        queryParameters: {'query': '', 'limit': 50},
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = response.data is List ? response.data : <dynamic>[];
+        final List<dynamic> data = response.data is List
+            ? response.data
+            : <dynamic>[];
         _foods = data.map((json) => FoodNutritionItem.fromJson(json)).toList();
         return;
       }
@@ -49,26 +48,47 @@ class FoodSearchService {
     final normalizedQuery = query.trim().toLowerCase();
     final baseFoods = _foods.isEmpty ? await _ensureFoodsLoaded() : _foods;
     final filtered = baseFoods.where((food) {
-      final matchesQuery = normalizedQuery.isEmpty ||
+      final matchesQuery =
+          normalizedQuery.isEmpty ||
           food.name.toLowerCase().contains(normalizedQuery) ||
           food.category.toLowerCase().contains(normalizedQuery) ||
-          (food.description.isNotEmpty && food.description.toLowerCase().contains(normalizedQuery));
-      final matchesCategory = category == null || category.trim().isEmpty ||
+          (food.description.isNotEmpty &&
+              food.description.toLowerCase().contains(normalizedQuery));
+      final matchesCategory =
+          category == null ||
+          category.trim().isEmpty ||
           food.category.toLowerCase() == category.toLowerCase();
-      final matchesCalories = maxCalories == null || food.calories == null || food.calories! <= maxCalories;
-      final matchesProtein = (minProtein == null || food.protein == null || food.protein! >= minProtein) &&
-          (maxProtein == null || food.protein == null || food.protein! <= maxProtein);
-      return matchesQuery && matchesCategory && matchesCalories && matchesProtein;
+      final matchesCalories =
+          maxCalories == null ||
+          food.calories == null ||
+          food.calories! <= maxCalories;
+      final matchesProtein =
+          (minProtein == null ||
+              food.protein == null ||
+              food.protein! >= minProtein) &&
+          (maxProtein == null ||
+              food.protein == null ||
+              food.protein! <= maxProtein);
+      return matchesQuery &&
+          matchesCategory &&
+          matchesCalories &&
+          matchesProtein;
     }).toList();
 
     filtered.sort((a, b) {
-      final queryMatchA = a.name.toLowerCase().startsWith(normalizedQuery) ? 0 : 1;
-      final queryMatchB = b.name.toLowerCase().startsWith(normalizedQuery) ? 0 : 1;
+      final queryMatchA = a.name.toLowerCase().startsWith(normalizedQuery)
+          ? 0
+          : 1;
+      final queryMatchB = b.name.toLowerCase().startsWith(normalizedQuery)
+          ? 0
+          : 1;
       if (queryMatchA != queryMatchB) return queryMatchA.compareTo(queryMatchB);
       final categoryA = a.category.toLowerCase();
       final categoryB = b.category.toLowerCase();
       if (categoryA != categoryB) return categoryA.compareTo(categoryB);
-      return (a.calories ?? double.infinity).compareTo(b.calories ?? double.infinity);
+      return (a.calories ?? double.infinity).compareTo(
+        b.calories ?? double.infinity,
+      );
     });
 
     return filtered.take(limit).toList();
@@ -104,7 +124,8 @@ class FoodSearchService {
         name: 'Pho Bo',
         sourceType: 'Branded',
         category: 'Vietnamese',
-        imageUrl: 'https://images.unsplash.com/photo-1555126634-323283e090fa?auto=format&fit=crop&w=400&q=80',
+        imageUrl:
+            'https://images.unsplash.com/photo-1555126634-323283e090fa?auto=format&fit=crop&w=400&q=80',
         description: 'Classic Vietnamese beef noodle soup.',
         calories: 320,
         protein: 20,
@@ -119,7 +140,8 @@ class FoodSearchService {
         name: 'Banh Mi',
         sourceType: 'Branded',
         category: 'Vietnamese',
-        imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
+        imageUrl:
+            'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
         description: 'Vietnamese sandwich with pickled vegetables.',
         calories: 410,
         protein: 18,
@@ -134,7 +156,8 @@ class FoodSearchService {
         name: 'Bun Cha',
         sourceType: 'Branded',
         category: 'Vietnamese',
-        imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=400&q=80',
+        imageUrl:
+            'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=400&q=80',
         description: 'Grilled pork with rice noodles.',
         calories: 450,
         protein: 25,
@@ -149,7 +172,8 @@ class FoodSearchService {
         name: 'Banana',
         sourceType: 'Branded',
         category: 'Fruit',
-        imageUrl: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=400&q=80',
+        imageUrl:
+            'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=400&q=80',
         description: 'A sweet tropical fruit with natural sugars.',
         calories: 89,
         protein: 1.1,
@@ -164,7 +188,8 @@ class FoodSearchService {
         name: 'Chicken Breast',
         sourceType: 'Branded',
         category: 'Proteins',
-        imageUrl: 'https://images.unsplash.com/photo-1518492104633-130d0cc84637?auto=format&fit=crop&w=400&q=80',
+        imageUrl:
+            'https://images.unsplash.com/photo-1518492104633-130d0cc84637?auto=format&fit=crop&w=400&q=80',
         description: 'Lean protein source ideal for calorie control.',
         calories: 165,
         protein: 31,

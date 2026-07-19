@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/network/api_client.dart';
 
 class ProfileApiService {
@@ -8,7 +9,7 @@ class ProfileApiService {
       if (response.statusCode == 200) return response.data;
       return null;
     } catch (e) {
-      print('Get Profile Error: $e');
+      debugPrint('Get Profile Error: $e');
       return null;
     }
   }
@@ -52,7 +53,7 @@ class ProfileApiService {
       }
       return null;
     } catch (e) {
-      print('Update Profile Error: $e');
+      debugPrint('Update Profile Error: $e');
       rethrow;
     }
   }
@@ -68,7 +69,7 @@ class ProfileApiService {
       if (response.statusCode == 200) return response.data;
       return null;
     } catch (e) {
-      print('Get Calorie Goal Error: $e');
+      debugPrint('Get Calorie Goal Error: $e');
       return null;
     }
   }
@@ -81,7 +82,7 @@ class ProfileApiService {
       }
       return [];
     } catch (e) {
-      print('Get Default Avatars Error: $e');
+      debugPrint('Get Default Avatars Error: $e');
       return [];
     }
   }

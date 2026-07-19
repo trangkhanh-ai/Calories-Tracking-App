@@ -112,7 +112,9 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
         future: _loadFuture,
         builder: (context, snapshot) {
           if (_isLoading) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+            return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primary),
+            );
           }
 
           return SafeArea(
@@ -143,7 +145,10 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -151,11 +156,33 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _FilterChip(label: 'All', selected: _selectedCategory.isEmpty, onTap: () => _applyCategoryFilter('')),
-                      _FilterChip(label: 'Vietnamese', selected: _selectedCategory == 'Vietnamese', onTap: () => _applyCategoryFilter('Vietnamese')),
-                      _FilterChip(label: 'Proteins', selected: _selectedCategory == 'Proteins', onTap: () => _applyCategoryFilter('Proteins')),
-                      _FilterChip(label: 'Fruit', selected: _selectedCategory == 'Fruit', onTap: () => _applyCategoryFilter('Fruit')),
-                      _FilterChip(label: '<= 500 kcal', selected: _maxCalories != null, onTap: () => _applyCalorieFilter(_maxCalories == null ? 500 : null)),
+                      _FilterChip(
+                        label: 'All',
+                        selected: _selectedCategory.isEmpty,
+                        onTap: () => _applyCategoryFilter(''),
+                      ),
+                      _FilterChip(
+                        label: 'Vietnamese',
+                        selected: _selectedCategory == 'Vietnamese',
+                        onTap: () => _applyCategoryFilter('Vietnamese'),
+                      ),
+                      _FilterChip(
+                        label: 'Proteins',
+                        selected: _selectedCategory == 'Proteins',
+                        onTap: () => _applyCategoryFilter('Proteins'),
+                      ),
+                      _FilterChip(
+                        label: 'Fruit',
+                        selected: _selectedCategory == 'Fruit',
+                        onTap: () => _applyCategoryFilter('Fruit'),
+                      ),
+                      _FilterChip(
+                        label: '<= 500 kcal',
+                        selected: _maxCalories != null,
+                        onTap: () => _applyCalorieFilter(
+                          _maxCalories == null ? 500 : null,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -164,13 +191,20 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(
                         'Connection error: $_errorMessage',
-                        style: GoogleFonts.outfit(color: AppTheme.error, fontWeight: FontWeight.w500),
+                        style: GoogleFonts.outfit(
+                          color: AppTheme.error,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   if (_isSearching)
                     const Padding(
                       padding: EdgeInsets.only(bottom: 16),
-                      child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppTheme.primary,
+                        ),
+                      ),
                     ),
                   if (_suggestions.isNotEmpty && !_isSearching)
                     Text(
@@ -188,12 +222,13 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                     child: _isSearching
                         ? const SizedBox()
                         : (_errorMessage != null && _suggestions.isEmpty)
-                            ? const SizedBox()
-                            : _suggestions.isEmpty
-                                ? _buildEmptyState()
-                                : ListView.separated(
+                        ? const SizedBox()
+                        : _suggestions.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.separated(
                             itemCount: _suggestions.length,
-                            separatorBuilder: (_, _) => const SizedBox(height: 8),
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 8),
                             itemBuilder: (context, index) {
                               final food = _suggestions[index];
                               return InkWell(
@@ -213,18 +248,30 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                                     children: [
                                       if (food.imageUrl.isNotEmpty)
                                         ClipRRect(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           child: CachedNetworkImage(
                                             imageUrl: food.imageUrl,
                                             width: 56,
                                             height: 56,
                                             fit: BoxFit.cover,
-                                            placeholder: (context, _) => const SizedBox(
-                                              width: 56,
-                                              height: 56,
-                                              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                                            ),
-                                            errorWidget: (context, _, __) => const Icon(Icons.image_not_supported_rounded),
+                                            placeholder: (context, _) =>
+                                                const SizedBox(
+                                                  width: 56,
+                                                  height: 56,
+                                                  child: Center(
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  ),
+                                                ),
+                                            errorWidget: (context, _, _) =>
+                                                const Icon(
+                                                  Icons
+                                                      .image_not_supported_rounded,
+                                                ),
                                           ),
                                         )
                                       else
@@ -233,14 +280,19 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                                           height: 56,
                                           decoration: BoxDecoration(
                                             color: AppTheme.surfaceVariant,
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
-                                          child: const Icon(Icons.restaurant_rounded),
+                                          child: const Icon(
+                                            Icons.restaurant_rounded,
+                                          ),
                                         ),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               food.name,
@@ -277,7 +329,8 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                           ),
                   ),
                   const SizedBox(height: 12),
-                  if (_selectedFood != null) _buildSelectedFoodCard(_selectedFood!),
+                  if (_selectedFood != null)
+                    _buildSelectedFoodCard(_selectedFood!),
                 ],
               ),
             ),
@@ -358,12 +411,18 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _NutritionChip(label: 'Protein', value: _formatValue(food.protein)),
+              _NutritionChip(
+                label: 'Protein',
+                value: _formatValue(food.protein),
+              ),
               _NutritionChip(label: 'Carbs', value: _formatValue(food.carbs)),
               _NutritionChip(label: 'Fat', value: _formatValue(food.fat)),
               _NutritionChip(label: 'Sugar', value: _formatValue(food.sugar)),
               _NutritionChip(label: 'Fiber', value: _formatValue(food.fiber)),
-              _NutritionChip(label: 'Sodium', value: _formatValue(food.sodium, unit: 'mg')),
+              _NutritionChip(
+                label: 'Sodium',
+                value: _formatValue(food.sodium, unit: 'mg'),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -375,13 +434,18 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
                 backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 elevation: 0,
               ),
               icon: const Icon(Icons.add_rounded),
               label: Text(
                 'Add to Diary',
-                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
+                style: GoogleFonts.outfit(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -395,10 +459,10 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AddMealBottomSheet(
+      builder: (sheetContext) => _AddMealBottomSheet(
         food: food,
         onSave: (quantity, mealType, date) async {
-          Navigator.pop(context);
+          Navigator.pop(sheetContext);
           try {
             final entry = FoodEntry(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -448,7 +512,11 @@ class _FilterChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _FilterChip({required this.label, required this.selected, required this.onTap});
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -459,7 +527,9 @@ class _FilterChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? AppTheme.primary.withAlpha(40) : AppTheme.surface,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppTheme.primary : Colors.transparent),
+          border: Border.all(
+            color: selected ? AppTheme.primary : Colors.transparent,
+          ),
         ),
         child: Text(
           label,
@@ -507,7 +577,9 @@ class _AddMealBottomSheet extends StatefulWidget {
 }
 
 class _AddMealBottomSheetState extends State<_AddMealBottomSheet> {
-  final TextEditingController _qtyController = TextEditingController(text: "100");
+  final TextEditingController _qtyController = TextEditingController(
+    text: "100",
+  );
   String _selectedMealType = "Snack";
   final DateTime _selectedDate = DateTime.now();
 
@@ -536,10 +608,21 @@ class _AddMealBottomSheetState extends State<_AddMealBottomSheet> {
         children: [
           Text(
             'Add ${widget.food.name}',
-            style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.onBackground),
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.onBackground,
+            ),
           ),
           const SizedBox(height: 20),
-          Text('Quantity (grams)', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+          Text(
+            'Quantity (grams)',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _qtyController,
@@ -547,12 +630,25 @@ class _AddMealBottomSheetState extends State<_AddMealBottomSheet> {
             decoration: InputDecoration(
               filled: true,
               fillColor: AppTheme.surface,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
           ),
           const SizedBox(height: 20),
-          Text('Meal Type', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
+          Text(
+            'Meal Type',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.onSurface,
+            ),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -589,11 +685,16 @@ class _AddMealBottomSheetState extends State<_AddMealBottomSheet> {
                 backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               child: Text(
                 'Save to Diary',
-                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
+                style: GoogleFonts.outfit(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),

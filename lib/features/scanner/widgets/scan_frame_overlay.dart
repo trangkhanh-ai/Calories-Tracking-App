@@ -21,9 +21,10 @@ class _ScanFrameOverlayState extends State<ScanFrameOverlay>
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
-    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _pulseAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -75,7 +76,7 @@ class _DimOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black.withOpacity(0.55);
+    final paint = Paint()..color = Colors.black.withValues(alpha: 0.55);
     final frameLeft = (size.width - frameSize) / 2;
     final frameTop = (size.height - frameSize) / 2;
     final frameRect = Rect.fromLTWH(frameLeft, frameTop, frameSize, frameSize);
@@ -101,7 +102,7 @@ class _CornerFramePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color.withOpacity(opacity)
+      ..color = color.withValues(alpha: opacity)
       ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
@@ -124,7 +125,10 @@ class _CornerFramePainter extends CustomPainter {
       Path()
         ..moveTo(size.width - cornerLength - radius, 0)
         ..lineTo(size.width - radius, 0)
-        ..arcToPoint(Offset(size.width, radius), radius: const Radius.circular(radius))
+        ..arcToPoint(
+          Offset(size.width, radius),
+          radius: const Radius.circular(radius),
+        )
         ..lineTo(size.width, cornerLength + radius),
       paint,
     );
@@ -134,7 +138,10 @@ class _CornerFramePainter extends CustomPainter {
       Path()
         ..moveTo(0, size.height - cornerLength - radius)
         ..lineTo(0, size.height - radius)
-        ..arcToPoint(Offset(radius, size.height), radius: const Radius.circular(radius))
+        ..arcToPoint(
+          Offset(radius, size.height),
+          radius: const Radius.circular(radius),
+        )
         ..lineTo(cornerLength + radius, size.height),
       paint,
     );
@@ -144,8 +151,10 @@ class _CornerFramePainter extends CustomPainter {
       Path()
         ..moveTo(size.width - cornerLength - radius, size.height)
         ..lineTo(size.width - radius, size.height)
-        ..arcToPoint(Offset(size.width, size.height - radius),
-            radius: const Radius.circular(radius))
+        ..arcToPoint(
+          Offset(size.width, size.height - radius),
+          radius: const Radius.circular(radius),
+        )
         ..lineTo(size.width, size.height - cornerLength - radius),
       paint,
     );
