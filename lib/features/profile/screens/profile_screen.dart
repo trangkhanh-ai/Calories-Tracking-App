@@ -49,7 +49,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final prefs = await SharedPreferences.getInstance();
       final savedActivity = prefs.getString('activityLevel');
       final savedGoal = prefs.getString('weightGoal');
-      
+
       final profile = await ref.read(profileProvider.future);
       if (profile != null && mounted) {
         setState(() {
@@ -58,18 +58,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _age = profile['age'] ?? _age;
           _weight = (profile['weight'] as num?)?.toDouble() ?? _weight;
           _heightCm = (profile['height'] as num?)?.toDouble() ?? _heightCm;
-          _gender = (profile['gender'] == 'Female') ? Gender.female : Gender.male;
-          
+          _gender = (profile['gender'] == 'Female')
+              ? Gender.female
+              : Gender.male;
+
           if (savedActivity != null) {
-            _activityLevel = ActivityLevel.values.firstWhere((e) => e.toString() == savedActivity, orElse: () => _activityLevel);
+            _activityLevel = ActivityLevel.values.firstWhere(
+              (e) => e.toString() == savedActivity,
+              orElse: () => _activityLevel,
+            );
           }
           if (savedGoal != null) {
-            _weightGoal = WeightGoal.values.firstWhere((e) => e.toString() == savedGoal, orElse: () => _weightGoal);
+            _weightGoal = WeightGoal.values.firstWhere(
+              (e) => e.toString() == savedGoal,
+              orElse: () => _weightGoal,
+            );
           }
         });
       }
     } catch (e) {
-      print('Load Profile Error: $e');
+      debugPrint('Load Profile Error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -79,7 +87,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final avatars = await profileApiService.getDefaultAvatars();
     if (avatars.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không tải được danh sách ảnh mặc định')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không tải được danh sách ảnh mặc định'),
+          ),
+        );
       }
       return;
     }
@@ -98,15 +110,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  Text('Chọn ảnh đại diện', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800)),
+                  Text(
+                    'Chọn ảnh đại diện',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Expanded(
                     child: GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                          ),
                       itemCount: avatars.length,
                       itemBuilder: (context, index) {
                         final avatarUrl = avatars[index];
@@ -130,7 +149,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
           );
-        }
+        },
       );
     }
   }
@@ -161,8 +180,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         age: _age,
       );
       setState(() {
-        _bmi = CalculatorUtils.calculateBMI(weight: _weight, heightCm: _heightCm);
-        _tdee = CalculatorUtils.calculateTDEE(bmr: bmr, activityLevel: _activityLevel);
+        _bmi = CalculatorUtils.calculateBMI(
+          weight: _weight,
+          heightCm: _heightCm,
+        );
+        _tdee = CalculatorUtils.calculateTDEE(
+          bmr: bmr,
+          activityLevel: _activityLevel,
+        );
         _recommendedCalories = CalculatorUtils.calculateRecommendedCalories(
           tdee: _tdee!,
           goal: _weightGoal,
@@ -192,23 +217,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
         if (result != null && mounted) {
           setState(() {
-             _avatarUrl = result['avatarUrl'];
-             _selectedDefaultAvatarUrl = null;
+            _avatarUrl = result['avatarUrl'];
+            _selectedDefaultAvatarUrl = null;
           });
-          ref.read(dailyGoalProvider.notifier).updateGoal(_recommendedCalories!);
+          ref
+              .read(dailyGoalProvider.notifier)
+              .updateGoal(_recommendedCalories!);
           ref.read(profileProvider.notifier).refresh();
           ref.invalidate(dailyDiaryProvider);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Đã đồng bộ lên Server & cập nhật mục tiêu: $_recommendedCalories kcal!',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+              SnackBar(
+                content: Text(
+                  'Đã đồng bộ lên Server & cập nhật mục tiêu: $_recommendedCalories kcal!',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                ),
+                backgroundColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
-              backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-          );
+            );
           }
         } else if (mounted) {
           throw Exception('Không nhận được phản hồi từ Server');
@@ -217,10 +246,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Lỗi đồng bộ Server: $e', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+              content: Text(
+                'Lỗi đồng bộ Server: $e',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+              ),
               backgroundColor: Colors.redAccent,
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
           );
         }
@@ -237,21 +271,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Đăng xuất', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, color: Colors.redAccent)),
-          content: Text('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản này không?', style: GoogleFonts.outfit(fontSize: 16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            'Đăng xuất',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w800,
+              color: Colors.redAccent,
+            ),
+          ),
+          content: Text(
+            'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản này không?',
+            style: GoogleFonts.outfit(fontSize: 16),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: Text('Hủy', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.grey)),
+              child: Text(
+                'Hủy',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () => Navigator.of(context).pop(true),
-              child: Text('Đăng xuất', style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)),
+              child: Text(
+                'Đăng xuất',
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
         );
@@ -303,9 +362,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       CircleAvatar(
                         radius: 50,
                         backgroundColor: AppTheme.surfaceVariant,
-                        backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+                        backgroundImage: _avatarUrl != null
+                            ? NetworkImage(_avatarUrl!)
+                            : null,
                         child: _avatarUrl == null
-                            ? const Icon(Icons.person, size: 50, color: Colors.grey)
+                            ? const Icon(
+                                Icons.person,
+                                size: 50,
+                                color: Colors.grey,
+                              )
                             : null,
                       ),
                       Positioned(
@@ -317,23 +382,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             color: AppTheme.primary,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 24),
-              _buildSectionTitle('Thông tin cá nhân')
-                  .animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
+              _buildSectionTitle(
+                'Thông tin cá nhân',
+              ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0),
 
               TextFormField(
                 key: ValueKey(_username),
                 initialValue: _username,
                 readOnly: true,
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.grey),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Tên đăng nhập',
                   filled: true,
@@ -344,7 +417,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
               ).animate().fadeIn(delay: 50.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -353,8 +426,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       label: 'Giới tính',
                       value: _gender,
                       items: const [
-                        DropdownMenuItem(value: Gender.male, child: Text('Nam')),
-                        DropdownMenuItem(value: Gender.female, child: Text('Nữ')),
+                        DropdownMenuItem(
+                          value: Gender.male,
+                          child: Text('Nam'),
+                        ),
+                        DropdownMenuItem(
+                          value: Gender.female,
+                          child: Text('Nữ'),
+                        ),
                       ],
                       onChanged: (v) => setState(() => _gender = v!),
                     ),
@@ -369,7 +448,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ],
               ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -377,7 +456,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     child: _buildNumberInput(
                       label: 'Chiều cao (cm)',
                       initialValue: _heightCm.toString(),
-                      onSaved: (v) => _heightCm = double.tryParse(v!) ?? _heightCm,
+                      onSaved: (v) =>
+                          _heightCm = double.tryParse(v!) ?? _heightCm,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -390,55 +470,92 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ],
               ).animate().fadeIn(delay: 150.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 32),
-              _buildSectionTitle('Lối sống & Mục tiêu')
-                  .animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0),
-              
+              _buildSectionTitle(
+                'Lối sống & Mục tiêu',
+              ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0),
+
               _buildDropdown<ActivityLevel>(
                 label: 'Mức độ vận động',
                 value: _activityLevel,
                 items: const [
-                  DropdownMenuItem(value: ActivityLevel.sedentary, child: Text('Ít vận động (Việc văn phòng)')),
-                  DropdownMenuItem(value: ActivityLevel.lightlyActive, child: Text('Vận động nhẹ (Tập 1-3 ngày/tuần)')),
-                  DropdownMenuItem(value: ActivityLevel.moderatelyActive, child: Text('Vận động vừa (Tập 3-5 ngày/tuần)')),
-                  DropdownMenuItem(value: ActivityLevel.veryActive, child: Text('Vận động nhiều (Tập 6-7 ngày/tuần)')),
-                  DropdownMenuItem(value: ActivityLevel.extraActive, child: Text('Rất năng động (Lao động chân tay/VĐV)')),
+                  DropdownMenuItem(
+                    value: ActivityLevel.sedentary,
+                    child: Text('Ít vận động (Việc văn phòng)'),
+                  ),
+                  DropdownMenuItem(
+                    value: ActivityLevel.lightlyActive,
+                    child: Text('Vận động nhẹ (Tập 1-3 ngày/tuần)'),
+                  ),
+                  DropdownMenuItem(
+                    value: ActivityLevel.moderatelyActive,
+                    child: Text('Vận động vừa (Tập 3-5 ngày/tuần)'),
+                  ),
+                  DropdownMenuItem(
+                    value: ActivityLevel.veryActive,
+                    child: Text('Vận động nhiều (Tập 6-7 ngày/tuần)'),
+                  ),
+                  DropdownMenuItem(
+                    value: ActivityLevel.extraActive,
+                    child: Text('Rất năng động (Lao động chân tay/VĐV)'),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _activityLevel = v!),
               ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 16),
               _buildDropdown<WeightGoal>(
                 label: 'Mục tiêu',
                 value: _weightGoal,
                 items: const [
-                  DropdownMenuItem(value: WeightGoal.lose, child: Text('Giảm cân')),
-                  DropdownMenuItem(value: WeightGoal.maintain, child: Text('Giữ cân')),
-                  DropdownMenuItem(value: WeightGoal.gain, child: Text('Tăng cân')),
+                  DropdownMenuItem(
+                    value: WeightGoal.lose,
+                    child: Text('Giảm cân'),
+                  ),
+                  DropdownMenuItem(
+                    value: WeightGoal.maintain,
+                    child: Text('Giữ cân'),
+                  ),
+                  DropdownMenuItem(
+                    value: WeightGoal.gain,
+                    child: Text('Tăng cân'),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _weightGoal = v!),
               ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1, end: 0),
-              
+
               const SizedBox(height: 32),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   elevation: 4,
                   shadowColor: AppTheme.primary.withAlpha(100),
                 ),
                 onPressed: _calculate,
                 child: Text(
                   'Tính Toán',
-                  style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
               ).animate().scale(delay: 400.ms, duration: 300.ms),
-              
-              if (_bmi != null && _tdee != null && _recommendedCalories != null) ...[
+
+              if (_bmi != null &&
+                  _tdee != null &&
+                  _recommendedCalories != null) ...[
                 const SizedBox(height: 40),
-                _buildResultsCard().animate().fadeIn().slideY(begin: 0.2, end: 0, curve: Curves.easeOutCubic),
+                _buildResultsCard().animate().fadeIn().slideY(
+                  begin: 0.2,
+                  end: 0,
+                  curve: Curves.easeOutCubic,
+                ),
               ],
             ],
           ),
@@ -461,27 +578,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildNumberInput({required String label, required String initialValue, required void Function(String?) onSaved}) {
+  Widget _buildNumberInput({
+    required String label,
+    required String initialValue,
+    required void Function(String?) onSaved,
+  }) {
     return TextFormField(
       key: ValueKey(initialValue),
       initialValue: initialValue,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: AppTheme.onBackground),
-      decoration: InputDecoration(
-        labelText: label,
+      style: GoogleFonts.outfit(
+        fontWeight: FontWeight.w600,
+        color: AppTheme.onBackground,
       ),
+      decoration: InputDecoration(labelText: label),
       validator: (v) => (v == null || v.isEmpty) ? 'Bắt buộc' : null,
       onSaved: onSaved,
     );
   }
 
-  Widget _buildDropdown<T>({required String label, required T value, required List<DropdownMenuItem<T>> items, required void Function(T?) onChanged}) {
+  Widget _buildDropdown<T>({
+    required String label,
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required void Function(T?) onChanged,
+  }) {
     return DropdownButtonFormField<T>(
-      value: value,
-      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: AppTheme.onBackground, fontSize: 14),
-      decoration: InputDecoration(
-        labelText: label,
+      initialValue: value,
+      style: GoogleFonts.outfit(
+        fontWeight: FontWeight.w600,
+        color: AppTheme.onBackground,
+        fontSize: 14,
       ),
+      decoration: InputDecoration(labelText: label),
       items: items,
       onChanged: onChanged,
     );
@@ -504,13 +633,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Column(
         children: [
           Text(
-            'Kết Quả Của Bạn', 
-            style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.onBackground)
+            'Kết Quả Của Bạn',
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.onBackground,
+            ),
           ),
           const SizedBox(height: 24),
-          _buildResultRow('Chỉ số BMI', _bmi!.toStringAsFixed(1), _getBMIStatus(_bmi!)),
+          _buildResultRow(
+            'Chỉ số BMI',
+            _bmi!.toStringAsFixed(1),
+            _getBMIStatus(_bmi!),
+          ),
           const SizedBox(height: 16),
-          _buildResultRow('TDEE (Năng lượng tiêu hao)', '${_tdee!.round()} kcal', 'mỗi ngày'),
+          _buildResultRow(
+            'TDEE (Năng lượng tiêu hao)',
+            '${_tdee!.round()} kcal',
+            'mỗi ngày',
+          ),
           const SizedBox(height: 32),
           Container(
             padding: const EdgeInsets.all(20),
@@ -522,7 +663,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               children: [
                 Text(
                   'Mục tiêu Calo đề xuất',
-                  style: GoogleFonts.outfit(color: AppTheme.onSurface, fontSize: 15, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.outfit(
+                    color: AppTheme.onSurface,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -543,17 +688,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.secondary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 elevation: 4,
                 shadowColor: AppTheme.secondary.withAlpha(100),
               ),
               onPressed: _isLoading ? null : _applyGoal,
-              icon: _isLoading 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
                   : const Icon(Icons.check_circle, color: Colors.white),
               label: Text(
                 _isLoading ? 'Đang đồng bộ...' : 'Áp dụng Mục tiêu này',
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
@@ -567,13 +725,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(
-          child: Text(label, style: GoogleFonts.outfit(color: AppTheme.onSurface, fontSize: 15, fontWeight: FontWeight.w500)),
+          child: Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: AppTheme.onSurface,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(value, style: GoogleFonts.outfit(color: AppTheme.onBackground, fontSize: 18, fontWeight: FontWeight.w800)),
-            Text(subValue, style: GoogleFonts.outfit(color: AppTheme.onSurface, fontSize: 13, fontWeight: FontWeight.w500)),
+            Text(
+              value,
+              style: GoogleFonts.outfit(
+                color: AppTheme.onBackground,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              subValue,
+              style: GoogleFonts.outfit(
+                color: AppTheme.onSurface,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ],

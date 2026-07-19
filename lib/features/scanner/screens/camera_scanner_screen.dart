@@ -106,7 +106,8 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
       await _cameraController?.dispose();
       _cameraController = CameraController(
         _cameras[_selectedCamera],
-        ResolutionPreset.medium, // Giảm từ high xuống medium để AI quét nhanh gấp 5 lần
+        ResolutionPreset
+            .medium, // Giảm từ high xuống medium để AI quét nhanh gấp 5 lần
         enableAudio: false,
       );
       await _cameraController!.initialize();
@@ -167,7 +168,9 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
     if (!mounted) return;
     _showLoadingOverlay();
 
-    final result = await ref.read(scanProvider.notifier).analyzeImage(imagePath);
+    final result = await ref
+        .read(scanProvider.notifier)
+        .analyzeImage(imagePath);
 
     if (!mounted) return;
     Navigator.of(context).pop(); // Close loading overlay
@@ -176,7 +179,11 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
       if (!result.foodDetected) {
         _showNoFoodDialog();
       } else if (result.imageQuality == 'low_light') {
-        _showQualityWarning('💡 Ảnh hơi tối — kết quả có thể kém chính xác hơn', result, imagePath);
+        _showQualityWarning(
+          '💡 Ảnh hơi tối — kết quả có thể kém chính xác hơn',
+          result,
+          imagePath,
+        );
       } else {
         context.pushNamed('results', extra: result);
       }
@@ -200,8 +207,10 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('🤔 Không tìm thấy thức ăn',
-            style: TextStyle(color: AppTheme.onBackground)),
+        title: const Text(
+          '🤔 Không tìm thấy thức ăn',
+          style: TextStyle(color: AppTheme.onBackground),
+        ),
         content: const Text(
           'Hãy đảm bảo khung hình chứa món ăn rõ ràng và ánh sáng đủ.',
           style: TextStyle(color: AppTheme.onSurface),
@@ -209,15 +218,20 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Thử lại', style: TextStyle(color: AppTheme.primary)),
+            child: const Text(
+              'Thử lại',
+              style: TextStyle(color: AppTheme.primary),
+            ),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               _pickFromGallery();
             },
-            child: const Text('Chọn từ thư viện',
-                style: TextStyle(color: AppTheme.onSurface)),
+            child: const Text(
+              'Chọn từ thư viện',
+              style: TextStyle(color: AppTheme.onSurface),
+            ),
           ),
         ],
       ),
@@ -236,8 +250,8 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
         ),
         duration: const Duration(seconds: 5),
       ),
-    ); 
-    // Also navigate to results 
+    );
+    // Also navigate to results
     context.pushNamed('results', extra: result);
   }
 
@@ -261,8 +275,10 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        title: const Text('📷 Cần quyền Camera',
-            style: TextStyle(color: AppTheme.onBackground)),
+        title: const Text(
+          '📷 Cần quyền Camera',
+          style: TextStyle(color: AppTheme.onBackground),
+        ),
         content: const Text(
           'App cần quyền truy cập camera để quét thức ăn.',
           style: TextStyle(color: AppTheme.onSurface),
@@ -294,43 +310,48 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
             // Camera preview
             if (_cameraUnavailable)
               _CameraUnavailableFallback(onPickGallery: _pickFromGallery)
-            else if (_cameraController != null && _cameraController!.value.isInitialized)
+            else if (_cameraController != null &&
+                _cameraController!.value.isInitialized)
               Positioned.fill(
-                child: Builder(builder: (context) {
-                  final size = MediaQuery.of(context).size;
-                  final deviceRatio = size.width / size.height;
-                  final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
-                  final previewRatio = isLandscape 
-                      ? _cameraController!.value.aspectRatio 
-                      : (1 / _cameraController!.value.aspectRatio);
-                  
-                  double previewWidth;
-                  double previewHeight;
+                child: Builder(
+                  builder: (context) {
+                    final size = MediaQuery.of(context).size;
+                    final deviceRatio = size.width / size.height;
+                    final isLandscape =
+                        MediaQuery.of(context).orientation ==
+                        Orientation.landscape;
+                    final previewRatio = isLandscape
+                        ? _cameraController!.value.aspectRatio
+                        : (1 / _cameraController!.value.aspectRatio);
 
-                  if (previewRatio > deviceRatio) {
-                    // Màn hình hẹp hơn so với camera (ví dụ điện thoại dọc)
-                    previewHeight = size.height;
-                    previewWidth = size.height * previewRatio;
-                  } else {
-                    // Màn hình rộng hơn so với camera (ví dụ Web ngang)
-                    previewWidth = size.width;
-                    previewHeight = size.width / previewRatio;
-                  }
-                      
-                  return ClipRect(
-                    child: OverflowBox(
-                      maxWidth: previewWidth,
-                      maxHeight: previewHeight,
-                      minWidth: previewWidth,
-                      minHeight: previewHeight,
-                      child: SizedBox(
-                        width: previewWidth,
-                        height: previewHeight,
-                        child: CameraPreview(_cameraController!),
+                    double previewWidth;
+                    double previewHeight;
+
+                    if (previewRatio > deviceRatio) {
+                      // Màn hình hẹp hơn so với camera (ví dụ điện thoại dọc)
+                      previewHeight = size.height;
+                      previewWidth = size.height * previewRatio;
+                    } else {
+                      // Màn hình rộng hơn so với camera (ví dụ Web ngang)
+                      previewWidth = size.width;
+                      previewHeight = size.width / previewRatio;
+                    }
+
+                    return ClipRect(
+                      child: OverflowBox(
+                        maxWidth: previewWidth,
+                        maxHeight: previewHeight,
+                        minWidth: previewWidth,
+                        minHeight: previewHeight,
+                        child: SizedBox(
+                          width: previewWidth,
+                          height: previewHeight,
+                          child: CameraPreview(_cameraController!),
+                        ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  },
+                ),
               )
             else
               const Center(
@@ -343,7 +364,10 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
             // Top bar
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     // Back button
@@ -400,12 +424,18 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
               child: SafeArea(
                 top: false,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 40),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 24,
+                    horizontal: 40,
+                  ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.8),
+                      ],
                     ),
                   ),
                   child: Row(
@@ -463,7 +493,7 @@ class _IconButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.4),
+          color: Colors.black.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(12),
           border: active
               ? Border.all(color: AppTheme.primary, width: 1.5)
@@ -497,7 +527,7 @@ class _ActionButton extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: Colors.white, size: 24),
