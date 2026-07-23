@@ -1,4 +1,5 @@
 using System.Text;
+using CaloriesTracking.Api.Configuration;
 using CaloriesTracking.Application;
 using CaloriesTracking.Infrastructure;
 using CaloriesTracking.Infrastructure.Data;
@@ -7,6 +8,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+ProductionConfigurationValidator.Validate(
+    builder.Configuration,
+    builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -24,7 +29,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.EnvironmentName);
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["Key"];
@@ -80,8 +85,36 @@ app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health/live", HealthEndpoints.Liveness);
+app.MapGet("/health", HealthEndpoints.ReadinessAsync);
 
 app.MapControllers();
 
 app.Run();
+
+public static class HealthEndpoints
+{
+    public static IResult Liveness() =>
+        Results.Ok(new { status = "ok" });
+
+    public static async Task<IResult> ReadinessAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await dbContext.Database.CanConnectAsync(cancellationToken)
+                ? Results.Ok(new { status = "ok" })
+                : Unavailable();
+        }
+        catch (Exception)
+        {
+            return Unavailable();
+        }
+    }
+
+    private static IResult Unavailable() =>
+        Results.Json(
+            new { status = "unavailable" },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+}

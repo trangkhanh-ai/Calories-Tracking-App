@@ -17,8 +17,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
-# Render/Railway map PORT vào đây
-ENV ASPNETCORE_URLS=http://+:8080
+# Render injects PORT at runtime; keep 8080 as the local Docker default.
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "CaloriesTracking.Api.dll"]
+ENTRYPOINT ["sh", "-c", "exec dotnet CaloriesTracking.Api.dll --urls http://0.0.0.0:${PORT:-8080}"]

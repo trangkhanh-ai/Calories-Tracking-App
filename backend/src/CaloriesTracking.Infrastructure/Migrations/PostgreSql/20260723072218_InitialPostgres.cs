@@ -1,0 +1,155 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+
+#nullable disable
+
+namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
+{
+    /// <inheritdoc />
+    public partial class InitialPostgres : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "Foods",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    FdcId = table.Column<int>(type: "integer", nullable: true),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    SourceType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    CaloriesPer100g = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    Protein = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    Carbs = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    Fat = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    Sugar = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: true),
+                    Fiber = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: true),
+                    Sodium = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Foods", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Username = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    PasswordHash = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                    Email = table.Column<string>(type: "character varying(254)", maxLength: 254, nullable: false),
+                    DisplayName = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false),
+                    AvatarUrl = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
+                    Height = table.Column<decimal>(type: "numeric(5,2)", precision: 5, scale: 2, nullable: true),
+                    Weight = table.Column<decimal>(type: "numeric(5,2)", precision: 5, scale: 2, nullable: true),
+                    Age = table.Column<int>(type: "integer", nullable: true),
+                    Gender = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    TargetCalories = table.Column<int>(type: "integer", nullable: true),
+                    ActivityLevel = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "DailyLogs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    Date = table.Column<DateOnly>(type: "date", nullable: false),
+                    TotalCaloriesConsumed = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DailyLogs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DailyLogs_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "MealItems",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    DailyLogId = table.Column<int>(type: "integer", nullable: false),
+                    FoodId = table.Column<int>(type: "integer", nullable: false),
+                    Quantity = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    TotalCalories = table.Column<decimal>(type: "numeric(10,2)", precision: 10, scale: 2, nullable: false),
+                    MealType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MealItems", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_MealItems_DailyLogs_DailyLogId",
+                        column: x => x.DailyLogId,
+                        principalTable: "DailyLogs",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_MealItems_Foods_FoodId",
+                        column: x => x.FoodId,
+                        principalTable: "Foods",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DailyLogs_UserId_Date",
+                table: "DailyLogs",
+                columns: new[] { "UserId", "Date" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MealItems_DailyLogId",
+                table: "MealItems",
+                column: "DailyLogId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MealItems_FoodId",
+                table: "MealItems",
+                column: "FoodId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Username",
+                table: "Users",
+                column: "Username",
+                unique: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "MealItems");
+
+            migrationBuilder.DropTable(
+                name: "DailyLogs");
+
+            migrationBuilder.DropTable(
+                name: "Foods");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+        }
+    }
+}
