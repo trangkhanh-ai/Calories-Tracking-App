@@ -22,6 +22,12 @@ public static class ProductionConfigurationValidator
                 "Jwt:Key is missing or too short for production (minimum 32 characters).");
         }
 
+        if (IsKnownPlaceholderJwtKey(jwtKey))
+        {
+            throw new InvalidOperationException(
+                "Jwt:Key cannot use development or test placeholder keys in production.");
+        }
+
         if (string.IsNullOrWhiteSpace(configuration["Gemini:ApiKey"]))
         {
             throw new InvalidOperationException(
@@ -62,5 +68,16 @@ public static class ProductionConfigurationValidator
         }
 
         return !IPAddress.TryParse(uri.Host, out var address) || !IPAddress.IsLoopback(address);
+    }
+
+    private static bool IsKnownPlaceholderJwtKey(string key)
+    {
+        var lower = key.ToLowerInvariant();
+        return lower.Contains("dev_jwt_secret") ||
+               lower.Contains("test_jwt_secret") ||
+               lower.Contains("your_random_development_key") ||
+               lower.Contains("12345678901234567890123456789012") ||
+               lower.Contains("change_me") ||
+               lower.Contains("placeholder");
     }
 }

@@ -14,7 +14,7 @@ namespace CaloriesTracking.Api.Tests.Security;
 
 public class RateLimitingIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private const string TestJwtKey = "dev_jwt_secret_key_must_be_at_least_32_bytes_long_1234567890";
+    private const string TestJwtKey = "test_jwt_secret_key_must_be_at_least_32_bytes!";
     private readonly WebApplicationFactory<Program> _factory;
 
     public RateLimitingIntegrationTests(WebApplicationFactory<Program> factory)

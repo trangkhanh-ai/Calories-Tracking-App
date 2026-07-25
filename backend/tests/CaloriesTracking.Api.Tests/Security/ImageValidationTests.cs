@@ -102,36 +102,125 @@ public class ImageValidationTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Contains("exceeds 20,000,000", ex.Message);
     }
 
-    [Fact]
-    public async Task AnalyzeAsync_WithValidJpeg_DoesNotThrowValidationException()
+    private static (GeminiFoodAnalysisService Service, Mock<HttpMessageHandler> HandlerMock) CreateServiceWithFakeResponse()
     {
+        var httpMock = new Mock<HttpMessageHandler>();
+        httpMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    candidates = new[]
+                    {
+                        new
+                        {
+                            content = new
+                            {
+                                parts = new[]
+                                {
+                                    new
+                                    {
+                                        text = System.Text.Json.JsonSerializer.Serialize(new
+                                        {
+                                            food_detected = true,
+                                            items = new[]
+                                            {
+                                                new
+                                                {
+                                                    name = "Phở Bò",
+                                                    name_en = "Beef Pho",
+                                                    serving_size = "1 tô",
+                                                    calories = 450,
+                                                    protein_g = 25.0,
+                                                    carbs_g = 55.0,
+                                                    fat_g = 12.0,
+                                                    confidence = 0.95
+                                                }
+                                            },
+                                            image_quality = "good",
+                                            notes = "Nóng hổi"
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }))
+            });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { { "Gemini:ApiKey", "test-key" } })
+            .Build();
+
+        return (new GeminiFoodAnalysisService(new HttpClient(httpMock.Object), config), httpMock);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WithValidJpeg_PassesValidationAndCallsGeminiOnce()
+    {
+        var (service, handlerMock) = CreateServiceWithFakeResponse();
         using var image = new Image<Rgba32>(10, 10);
         using var ms = new MemoryStream();
         image.SaveAsJpeg(ms);
 
-        // Will throw GeminiUnavailableException or GeminiException because httpMock isn't set up,
-        // but image validation passed.
-        await Assert.ThrowsAnyAsync<Exception>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var response = await service.AnalyzeAsync(ms.ToArray());
+
+        Assert.NotNull(response);
+        Assert.True(response.FoodDetected);
+        Assert.Single(response.Items);
+        Assert.Equal("Phở Bò", response.Items[0].Name);
+
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithValidPng_DoesNotThrowValidationException()
+    public async Task AnalyzeAsync_WithValidPng_PassesValidationAndCallsGeminiOnce()
     {
+        var (service, handlerMock) = CreateServiceWithFakeResponse();
         using var image = new Image<Rgba32>(10, 10);
         using var ms = new MemoryStream();
         image.SaveAsPng(ms);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var response = await service.AnalyzeAsync(ms.ToArray());
+
+        Assert.NotNull(response);
+        Assert.True(response.FoodDetected);
+        Assert.Single(response.Items);
+
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithValidWebP_DoesNotThrowValidationException()
+    public async Task AnalyzeAsync_WithValidWebP_PassesValidationAndCallsGeminiOnce()
     {
+        var (service, handlerMock) = CreateServiceWithFakeResponse();
         using var image = new Image<Rgba32>(10, 10);
         using var ms = new MemoryStream();
         image.SaveAsWebp(ms);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var response = await service.AnalyzeAsync(ms.ToArray());
+
+        Assert.NotNull(response);
+        Assert.True(response.FoodDetected);
+        Assert.Single(response.Items);
+
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.IsAny<CancellationToken>());
     }
 
     [Fact]

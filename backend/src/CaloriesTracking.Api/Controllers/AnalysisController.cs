@@ -75,7 +75,7 @@ public class AnalysisController : ControllerBase
         {
             return StatusCode(415, new { error = ex.Message });
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("exceeds"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("exceed", StringComparison.OrdinalIgnoreCase))
         {
             return StatusCode(413, new { error = ex.Message });
         }
