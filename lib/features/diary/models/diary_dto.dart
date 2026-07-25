@@ -103,12 +103,20 @@ class LogMealRequest {
     required this.date,
   });
 
+  static String normalizeMealType(String input) {
+    final lower = input.trim().toLowerCase();
+    if (lower.contains('sáng') || lower == 'breakfast') return 'Breakfast';
+    if (lower.contains('trưa') || lower == 'lunch') return 'Lunch';
+    if (lower.contains('tối') || lower == 'dinner') return 'Dinner';
+    return 'Snack';
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'foodName': foodName,
       'caloriesPer100g': caloriesPer100g,
       'quantity': quantity,
-      'mealType': mealType,
+      'mealType': normalizeMealType(mealType),
       'date': date.toIso8601String(),
     };
   }

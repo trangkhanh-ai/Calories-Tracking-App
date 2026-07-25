@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/food_analysis_result.dart';
 import '../widgets/macro_card.dart';
 import '../../diary/models/food_entry.dart';
+import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../../app/theme.dart';
 import '../../../shared/utils/constants.dart';
@@ -104,8 +105,22 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
 
     try {
       await ref.read(localStorageProvider).addEntry(entry);
+
+      try {
+        final request = LogMealRequest(
+          foodName: combinedName,
+          caloriesPer100g: _totalCalories,
+          quantity: 100.0,
+          mealType: mealMap[_selectedMeal] ?? 'Snack',
+          date: DateTime.now(),
+        );
+        await ref.read(diaryApiServiceProvider).logMeal(request);
+      } catch (_) {
+        // Fallback to local entry if API fails or offline
+      }
+
       ref.invalidate(dailyDiaryProvider);
-      // ref.invalidate(weeklyStatsProvider); // TODO: implement local stats
+      ref.invalidate(weeklyStatsProvider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

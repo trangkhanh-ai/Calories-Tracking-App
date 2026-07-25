@@ -10,7 +10,10 @@ class ApiClient {
 
   // Base URL đọc từ --dart-define=BACKEND_BASE_URL (mặc định localhost:5210).
   // Android Emulator: dùng --dart-define=BACKEND_BASE_URL=http://10.0.2.2:5210
-  static const String baseUrl = '${AppConstants.backendBaseUrl}/api';
+  static String get baseUrl {
+    final sanitized = AppConstants.sanitizeBackendBaseUrl(AppConstants.backendBaseUrl);
+    return '$sanitized/api';
+  }
 
   factory ApiClient() {
     return _instance;
