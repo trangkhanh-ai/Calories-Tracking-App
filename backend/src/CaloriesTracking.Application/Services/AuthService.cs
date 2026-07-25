@@ -4,6 +4,7 @@ using System.Text;
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Auth;
 using CaloriesTracking.Application.Exceptions;
+using CaloriesTracking.Application.Validation;
 using CaloriesTracking.Domain.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -14,113 +15,101 @@ public sealed class AuthService : IAuthService
 {
     private readonly IUserRepository _userRepository;
     private readonly IConfiguration _configuration;
+    private readonly IUniqueConstraintTranslator _constraintTranslator;
 
-    public AuthService(IUserRepository userRepository, IConfiguration configuration)
+    public AuthService(
+        IUserRepository userRepository,
+        IConfiguration configuration,
+        IUniqueConstraintTranslator constraintTranslator)
     {
         _userRepository = userRepository;
         _configuration = configuration;
+        _constraintTranslator = constraintTranslator;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Username))
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Validate everything before hashing: BCrypt is deliberately expensive,
+        // so a malformed request must never reach it.
+        var username = AuthValidationRules.ValidateUsername(request.Username);
+        var email = AuthValidationRules.ValidateEmail(request.Email);
+        AuthValidationRules.ValidatePassword(request.Password);
+        var displayName = AuthValidationRules.ValidateDisplayName(request.DisplayName);
+
+        var normalizedUsername = AuthValidationRules.Normalize(username);
+        var normalizedEmail = AuthValidationRules.Normalize(email);
+
+        // Friendly pre-check. It is advisory only — two concurrent registrations
+        // can both pass it, so the unique index below is the real guarantee.
+        if (await _userRepository.GetByNormalizedUsernameAsync(normalizedUsername, cancellationToken) != null)
         {
-            throw new ArgumentException("Username is required.");
+            throw new ConflictAppException("Username is already taken.");
         }
 
-        if (!IsValidEmail(request.Email))
+        if (await _userRepository.GetByNormalizedEmailAsync(normalizedEmail, cancellationToken) != null)
         {
-            throw new ArgumentException("Email is required and must be a valid email address.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
-        {
-            throw new ArgumentException("Password must be at least 8 characters long.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.DisplayName))
-        {
-            throw new ArgumentException("DisplayName is required.");
-        }
-
-        var trimmedUsername = request.Username.Trim();
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-
-        if (await _userRepository.GetByUsernameAsync(trimmedUsername, cancellationToken) != null)
-        {
-            throw new DuplicateUserException("Username is already taken.");
-        }
-
-        if (await _userRepository.GetByEmailAsync(normalizedEmail, cancellationToken) != null)
-        {
-            throw new DuplicateUserException("Email is already registered.");
+            throw new ConflictAppException("Email is already registered.");
         }
 
         var user = new User
         {
-            Username = trimmedUsername,
-            Email = normalizedEmail,
-            DisplayName = request.DisplayName.Trim(),
+            Username = username,
+            NormalizedUsername = normalizedUsername,
+            Email = email,
+            NormalizedEmail = normalizedEmail,
+            DisplayName = displayName,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
         };
 
         await _userRepository.AddAsync(user, cancellationToken);
-        await _userRepository.SaveChangesAsync(cancellationToken);
 
-        var token = GenerateJwtToken(user);
-
-        return new AuthResponse
+        try
         {
-            Token = token,
-            UserId = user.Id,
-            Username = user.Username,
-            DisplayName = user.DisplayName,
-            AvatarUrl = user.AvatarUrl
-        };
+            await _userRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception) when (_constraintTranslator.IsUniqueViolation(exception))
+        {
+            // Lost the race against a concurrent registration. Surface a clean
+            // 409 — never the provider message, SQL, or constraint name.
+            _userRepository.Detach(user);
+            throw new ConflictAppException("Username or email is already registered.");
+        }
+
+        return BuildResponse(user);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Username))
-        {
-            throw new ArgumentException("Username or Email is required.");
-        }
+        ArgumentNullException.ThrowIfNull(request);
 
-        if (string.IsNullOrWhiteSpace(request.Password))
-        {
-            throw new ArgumentException("Password is required.");
-        }
+        var identifier = AuthValidationRules.ValidateLoginIdentifier(request.Username);
+        AuthValidationRules.ValidateLoginPassword(request.Password);
 
-        var input = request.Username.Trim();
-        var user = await _userRepository.GetByUsernameAsync(input, cancellationToken)
-            ?? (input.Contains('@') ? await _userRepository.GetByEmailAsync(input.ToLowerInvariant(), cancellationToken) : null);
+        var normalizedIdentifier = AuthValidationRules.Normalize(identifier);
 
+        var user = await _userRepository.GetByNormalizedUsernameAsync(normalizedIdentifier, cancellationToken)
+            ?? await _userRepository.GetByNormalizedEmailAsync(normalizedIdentifier, cancellationToken);
+
+        // Single generic failure for "no such user" and "wrong password" so the
+        // endpoint cannot be used to enumerate accounts.
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             throw new UnauthorizedAccessException("Invalid username or password.");
         }
 
-        var token = GenerateJwtToken(user);
-
-        return new AuthResponse
-        {
-            Token = token,
-            UserId = user.Id,
-            Username = user.Username,
-            DisplayName = user.DisplayName,
-            AvatarUrl = user.AvatarUrl
-        };
+        return BuildResponse(user);
     }
 
-    private static bool IsValidEmail(string? email)
+    private AuthResponse BuildResponse(User user) => new()
     {
-        if (string.IsNullOrWhiteSpace(email)) return false;
-        var trimmed = email.Trim();
-        return System.Net.Mail.MailAddress.TryCreate(trimmed, out var address)
-            && address.Address == trimmed
-            && trimmed.Contains('@')
-            && trimmed.Split('@')[1].Contains('.');
-    }
+        Token = GenerateJwtToken(user),
+        UserId = user.Id,
+        Username = user.Username,
+        DisplayName = user.DisplayName,
+        AvatarUrl = user.AvatarUrl
+    };
 
     private string GenerateJwtToken(User user)
     {

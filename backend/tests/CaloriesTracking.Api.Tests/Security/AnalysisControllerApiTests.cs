@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Analysis;
+using CaloriesTracking.Application.Exceptions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -130,7 +131,7 @@ public class AnalysisControllerApiTests : IClassFixture<CustomWebApplicationFact
         var client = CreateAuthenticatedClient();
         _mockFoodAnalysisService
             .Setup(s => s.AnalyzeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new NotSupportedException("bmp is not supported"));
+            .ThrowsAsync(new UnsupportedMediaTypeAppException("Unsupported image type. Only JPEG, PNG, and WebP are accepted."));
 
         using var image = new Image<Rgba32>(10, 10);
         using var ms = new MemoryStream();
@@ -148,7 +149,7 @@ public class AnalysisControllerApiTests : IClassFixture<CustomWebApplicationFact
         var client = CreateAuthenticatedClient();
         _mockFoodAnalysisService
             .Setup(s => s.AnalyzeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Image dimensions exceed 8000x8000."));
+            .ThrowsAsync(new PayloadTooLargeAppException("Image dimensions exceed 8000x8000."));
 
         var base64 = Convert.ToBase64String(CreateJpegImage(10, 10));
         var response = await client.PostAsJsonAsync("/api/analysis/food", new AnalyzeFoodRequest(base64));
@@ -162,7 +163,7 @@ public class AnalysisControllerApiTests : IClassFixture<CustomWebApplicationFact
         var client = CreateAuthenticatedClient();
         _mockFoodAnalysisService
             .Setup(s => s.AnalyzeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Image dimensions exceed 8000x8000."));
+            .ThrowsAsync(new PayloadTooLargeAppException("Image dimensions exceed 8000x8000."));
 
         var base64 = Convert.ToBase64String(CreateJpegImage(10, 10));
         var response = await client.PostAsJsonAsync("/api/analysis/food", new AnalyzeFoodRequest(base64));
@@ -176,7 +177,7 @@ public class AnalysisControllerApiTests : IClassFixture<CustomWebApplicationFact
         var client = CreateAuthenticatedClient();
         _mockFoodAnalysisService
             .Setup(s => s.AnalyzeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Image pixel count exceeds 20,000,000."));
+            .ThrowsAsync(new PayloadTooLargeAppException("Image pixel count exceeds 20,000,000."));
 
         var base64 = Convert.ToBase64String(CreateJpegImage(10, 10));
         var response = await client.PostAsJsonAsync("/api/analysis/food", new AnalyzeFoodRequest(base64));

@@ -80,6 +80,11 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<decimal>("Protein")
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)");
@@ -99,7 +104,14 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
                     b.HasKey("Id");
 
                     b.HasIndex("FdcId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_Foods_FdcId")
+                        .HasFilter("\"FdcId\" IS NOT NULL");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Foods_NormalizedName_Custom")
+                        .HasFilter("\"FdcId\" IS NULL");
 
                     b.ToTable("Foods", (string)null);
                 });
@@ -140,6 +152,65 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
                     b.ToTable("MealItems", (string)null);
                 });
 
+            modelBuilder.Entity("CaloriesTracking.Domain.Entities.SeedHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorSummary")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int>("LastProcessedSourceRow")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LockExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LockOwner")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProcessedRows")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("TotalRows")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SeedHistories_Name_Version");
+
+                    b.ToTable("SeedHistories", (string)null);
+                });
+
             modelBuilder.Entity("CaloriesTracking.Domain.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -176,6 +247,16 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)");
 
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("NormalizedUsername")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -197,6 +278,14 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUsername")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedUsername");
 
                     b.HasIndex("Username")
                         .IsUnique();

@@ -31,12 +31,31 @@ public sealed class UserRepository : IUserRepository
 
     public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.Trim().ToLower();
-        return _dbContext.Users.FirstOrDefaultAsync(x => x.Email.ToLower() == normalizedEmail, cancellationToken);
+        var normalizedEmail = email.Trim().ToUpperInvariant();
+        return GetByNormalizedEmailAsync(normalizedEmail, cancellationToken);
+    }
+
+    public Task<User?> GetByNormalizedUsernameAsync(string normalizedUsername, CancellationToken cancellationToken = default)
+    {
+        // Compares an indexed stored column against a parameter — no per-row
+        // function call, so the unique index is usable on both providers.
+        return _dbContext.Users
+            .FirstOrDefaultAsync(x => x.NormalizedUsername == normalizedUsername, cancellationToken);
+    }
+
+    public Task<User?> GetByNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Users
+            .FirstOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
     }
 
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
     {
         await _dbContext.Users.AddAsync(user, cancellationToken);
+    }
+
+    public void Detach(User user)
+    {
+        _dbContext.Entry(user).State = EntityState.Detached;
     }
 }

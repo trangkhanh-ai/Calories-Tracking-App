@@ -1,109 +1,53 @@
-using CaloriesTracking.Domain.Entities;
-using CsvHelper;
-using CsvHelper.Configuration;
+using CaloriesTracking.Application.Exceptions;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 
 namespace CaloriesTracking.Infrastructure.Data.Seeders;
 
 public static class DatabaseSeeder
 {
-    public static async Task SeedUsdaFoodsAsync(ApplicationDbContext dbContext, string seedDataFolderPath)
+    /// <summary>
+    /// Fails fast when the data already violates the unique constraints the
+    /// migrations are about to create.
+    ///
+    /// Detection only: conflicting rows are never merged or deleted, because
+    /// either action would silently destroy user-visible records. An operator
+    /// must resolve the duplicates.
+    /// </summary>
+    public static async Task EnsureNoDuplicateFoodIdentitiesAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken = default)
     {
-        var csvFilePath = Path.Combine(seedDataFolderPath, "usda_calorie_dataset.csv");
-        if (!File.Exists(csvFilePath))
+        var duplicateFdcIds = await dbContext.Foods
+            .Where(f => f.FdcId != null)
+            .GroupBy(f => f.FdcId)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key!.Value)
+            .Take(10)
+            .ToListAsync(cancellationToken);
+
+        if (duplicateFdcIds.Count > 0)
         {
-            return;
+            // FdcIds are public USDA identifiers, not credentials, so naming
+            // them is safe and is what makes the failure actionable.
+            throw new DataIntegrityAppException(
+                "Duplicate non-null FdcId values exist in the Foods table and must be resolved " +
+                "before the unique index can be applied. Affected FdcId values (first 10): " +
+                string.Join(", ", duplicateFdcIds) + ".");
         }
 
-        var existingFdcIds = new HashSet<int>(
-            await dbContext.Foods
-                .Where(f => f.FdcId != null)
-                .Select(f => f.FdcId!.Value)
-                .ToListAsync());
+        var duplicateCustomNames = await dbContext.Foods
+            .Where(f => f.FdcId == null)
+            .GroupBy(f => f.NormalizedName)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .Take(10)
+            .ToListAsync(cancellationToken);
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        if (duplicateCustomNames.Count > 0)
         {
-            HasHeaderRecord = true,
-            MissingFieldFound = null,
-            HeaderValidated = null
-        };
-
-        using var reader = new StreamReader(csvFilePath);
-        using var csv = new CsvReader(reader, config);
-        
-        var records = new List<Food>();
-        await csv.ReadAsync();
-        csv.ReadHeader();
-
-        int batchSize = 10000;
-        int count = 0;
-
-        while (await csv.ReadAsync())
-        {
-            var fdcId = csv.GetField<int?>("fdc_id");
-            if (fdcId.HasValue && existingFdcIds.Contains(fdcId.Value))
-            {
-                continue;
-            }
-
-            var food = new Food
-            {
-                FdcId = fdcId,
-                Name = csv.GetField<string>("name") ?? "Unknown",
-                SourceType = csv.GetField<string>("source_type"),
-                CaloriesPer100g = csv.GetField<decimal>("kcal_100g"),
-                Protein = csv.GetField<decimal>("protein_100g"),
-                Carbs = csv.GetField<decimal>("carbs_100g"),
-                Fat = csv.GetField<decimal>("fat_100g"),
-                Sugar = csv.GetField<decimal?>("sugar_100g"),
-                Fiber = csv.GetField<decimal?>("fiber_100g"),
-                Sodium = csv.GetField<decimal?>("sodium_mg_100g")
-            };
-            records.Add(food);
-            if (fdcId.HasValue)
-            {
-                existingFdcIds.Add(fdcId.Value);
-            }
-            count++;
-
-            if (records.Count >= batchSize)
-            {
-                await dbContext.Foods.AddRangeAsync(records);
-                try
-                {
-                    await dbContext.SaveChangesAsync();
-                    Console.WriteLine($"Seeded {count} foods...");
-                }
-                catch (DbUpdateException)
-                {
-                    // Concurrency: Another instance may have seeded the same items
-                    Console.WriteLine($"Duplicate detected or constraint violation at {count} foods. Skipping batch.");
-                }
-                finally
-                {
-                    dbContext.ChangeTracker.Clear();
-                    records.Clear();
-                }
-            }
-        }
-
-        if (records.Count > 0)
-        {
-            await dbContext.Foods.AddRangeAsync(records);
-            try
-            {
-                await dbContext.SaveChangesAsync();
-                Console.WriteLine($"Finished seeding {count} foods.");
-            }
-            catch (DbUpdateException)
-            {
-                Console.WriteLine($"Duplicate detected or constraint violation in final batch. Skipping.");
-            }
-            finally
-            {
-                dbContext.ChangeTracker.Clear();
-            }
+            throw new DataIntegrityAppException(
+                $"{duplicateCustomNames.Count} duplicate custom food name(s) exist and must be " +
+                "resolved before the unique index can be applied.");
         }
     }
 }

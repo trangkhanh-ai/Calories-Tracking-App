@@ -8,6 +8,13 @@ public class Food
 
     public required string Name { get; set; }
 
+    /// <summary>
+    /// Uppercase-invariant copy of <see cref="Name"/>, unique only across
+    /// custom foods (rows where <see cref="FdcId"/> is null). USDA rows are
+    /// excluded because the dataset legitimately repeats display names.
+    /// </summary>
+    public string NormalizedName { get; set; } = string.Empty;
+
     public string? SourceType { get; set; }
 
     public decimal CaloriesPer100g { get; set; }

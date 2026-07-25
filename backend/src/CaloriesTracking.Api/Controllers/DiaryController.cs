@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Diary;
+using CaloriesTracking.Application.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,14 +12,6 @@ namespace CaloriesTracking.Api.Controllers;
 [Authorize]
 public class DiaryController : ControllerBase
 {
-    private static readonly HashSet<string> AllowedMealTypes = new(StringComparer.Ordinal)
-    {
-        "Breakfast",
-        "Lunch",
-        "Dinner",
-        "Snack"
-    };
-
     private readonly IDiaryService _diaryService;
 
     public DiaryController(IDiaryService diaryService)
@@ -44,34 +37,43 @@ public class DiaryController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Logs a meal. Validation lives in <see cref="DiaryValidationRules"/> and
+    /// surfaces as RFC 7807 ProblemDetails through the global handler, so this
+    /// endpoint never returns an ad-hoc anonymous error shape.
+    /// </summary>
     [HttpPost]
     public async Task<IActionResult> LogMeal([FromBody] LogMealRequest request, CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
         if (userId == 0) return Unauthorized();
 
-        if (request.Quantity <= 0)
-            return BadRequest(new { message = "Quantity must be greater than zero." });
+        // Fail fast at the edge so an invalid request never reaches the service
+        // or opens a transaction. The service re-validates independently.
+        DiaryValidationRules.ValidateLogMeal(request, DateTime.UtcNow);
 
-        if (request.MealType is null || !AllowedMealTypes.Contains(request.MealType))
-            return BadRequest(new { message = "MealType must be one of: Breakfast, Lunch, Dinner, Snack." });
+        var diary = await _diaryService.LogMealAsync(userId, request, cancellationToken);
 
-        await _diaryService.LogMealAsync(userId, request, cancellationToken);
-        return Ok(new { message = "Meal logged successfully." });
+        // `message` is retained so already-deployed clients that only read it
+        // keep working; `diary` is the new authoritative payload.
+        return Ok(new LogMealResponse("Meal logged successfully.", diary));
     }
 
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetStats(
+        [FromQuery] DateTime startDate,
+        [FromQuery] DateTime endDate,
+        CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
         if (userId == 0) return Unauthorized();
 
-        if (startDate != default && endDate != default && startDate > endDate)
-        {
-            return BadRequest(new { message = "startDate must be on or before endDate." });
-        }
+        DiaryValidationRules.ValidateStatsRange(startDate, endDate);
 
         var result = await _diaryService.GetStatsAsync(userId, startDate, endDate, cancellationToken);
         return Ok(result);
     }
 }
+
+/// <summary>Additive response: existing clients read <c>message</c>, new clients read <c>diary</c>.</summary>
+public sealed record LogMealResponse(string Message, DailyDiaryDto Diary);
