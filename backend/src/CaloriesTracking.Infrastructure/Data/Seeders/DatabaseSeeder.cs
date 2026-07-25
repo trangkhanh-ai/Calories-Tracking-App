@@ -10,16 +10,17 @@ public static class DatabaseSeeder
 {
     public static async Task SeedUsdaFoodsAsync(ApplicationDbContext dbContext, string seedDataFolderPath)
     {
-        if (await dbContext.Foods.AnyAsync(f => f.FdcId != null))
-        {
-            return; // Already seeded USDA data
-        }
-
         var csvFilePath = Path.Combine(seedDataFolderPath, "usda_calorie_dataset.csv");
         if (!File.Exists(csvFilePath))
         {
             return;
         }
+
+        var existingFdcIds = new HashSet<int>(
+            await dbContext.Foods
+                .Where(f => f.FdcId != null)
+                .Select(f => f.FdcId!.Value)
+                .ToListAsync());
 
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
@@ -40,9 +41,15 @@ public static class DatabaseSeeder
 
         while (await csv.ReadAsync())
         {
+            var fdcId = csv.GetField<int?>("fdc_id");
+            if (fdcId.HasValue && existingFdcIds.Contains(fdcId.Value))
+            {
+                continue;
+            }
+
             var food = new Food
             {
-                FdcId = csv.GetField<int?>("fdc_id"),
+                FdcId = fdcId,
                 Name = csv.GetField<string>("name") ?? "Unknown",
                 SourceType = csv.GetField<string>("source_type"),
                 CaloriesPer100g = csv.GetField<decimal>("kcal_100g"),
@@ -54,6 +61,10 @@ public static class DatabaseSeeder
                 Sodium = csv.GetField<decimal?>("sodium_mg_100g")
             };
             records.Add(food);
+            if (fdcId.HasValue)
+            {
+                existingFdcIds.Add(fdcId.Value);
+            }
             count++;
 
             if (records.Count >= batchSize)

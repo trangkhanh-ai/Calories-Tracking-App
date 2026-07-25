@@ -1,5 +1,6 @@
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Auth;
+using CaloriesTracking.Application.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,6 +29,10 @@ public sealed class AuthController : ControllerBase
         {
             var response = await _authService.RegisterAsync(request, cancellationToken);
             return Ok(response);
+        }
+        catch (DuplicateUserException ex)
+        {
+            return Conflict(new { message = ex.Message });
         }
         catch (ArgumentException ex)
         {

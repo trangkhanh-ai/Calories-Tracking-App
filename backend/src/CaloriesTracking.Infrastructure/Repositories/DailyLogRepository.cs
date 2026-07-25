@@ -43,4 +43,30 @@ public sealed class DailyLogRepository : IDailyLogRepository
     {
         return await _dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default)
+    {
+        if (_dbContext.Database.IsRelational())
+        {
+            var strategy = _dbContext.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                try
+                {
+                    await action();
+                    await transaction.CommitAsync(cancellationToken);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            });
+        }
+        else
+        {
+            await action();
+        }
+    }
 }

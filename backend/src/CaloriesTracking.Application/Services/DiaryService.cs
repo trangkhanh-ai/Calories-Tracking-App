@@ -65,6 +65,14 @@ public sealed class DiaryService : IDiaryService
 
     public async Task LogMealAsync(int userId, LogMealRequest request, CancellationToken cancellationToken = default)
     {
+        await _dailyLogRepository.ExecuteInTransactionAsync(async () =>
+        {
+            await ExecuteLogMealInternalAsync(userId, request, cancellationToken);
+        }, cancellationToken);
+    }
+
+    private async Task ExecuteLogMealInternalAsync(int userId, LogMealRequest request, CancellationToken cancellationToken)
+    {
         var food = await _foodRepository.GetByNameAsync(request.FoodName, cancellationToken);
         if (food == null)
         {
@@ -77,7 +85,6 @@ public sealed class DiaryService : IDiaryService
                 Fat = 0
             };
             _foodRepository.Add(food);
-            // We need to save changes so Food gets an ID before being added to MealItem
             await _dailyLogRepository.SaveChangesAsync(cancellationToken);
         }
 

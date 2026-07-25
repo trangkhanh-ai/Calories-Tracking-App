@@ -18,7 +18,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Key"] = TestJwtKey,
                 ["Jwt:Issuer"] = "CaloriesTracking.Api",
                 ["Jwt:Audience"] = "CaloriesTracking.Client",
-                ["Gemini:ApiKey"] = "test_gemini_api_key_placeholder"
+                ["Gemini:ApiKey"] = "test_gemini_api_key_placeholder",
+                ["RateLimiting:AuthLoginPermitLimit"] = "1000",
+                ["RateLimiting:AuthRegisterPermitLimit"] = "1000",
+                ["RateLimiting:FoodSearchPermitLimit"] = "1000",
+                ["RateLimiting:GeminiAnalysisPermitLimit"] = "1000"
             });
         });
     }
