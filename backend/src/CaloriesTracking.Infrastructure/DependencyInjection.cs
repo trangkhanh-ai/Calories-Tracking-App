@@ -61,7 +61,8 @@ public static class DependencyInjection
         services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);
-        });
+        })
+        .AddStandardResilienceHandler();
 
         return services;
     }

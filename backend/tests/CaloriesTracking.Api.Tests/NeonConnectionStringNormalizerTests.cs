@@ -62,16 +62,31 @@ public sealed class NeonConnectionStringNormalizerTests
         Assert.Contains("channel binding", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void Normalize_WhenTlsIsDisabled_Throws()
+    [Theory]
+    [InlineData("disable")]
+    [InlineData("allow")]
+    [InlineData("prefer")]
+    public void Normalize_WhenTlsIsWeak_Throws(string sslMode)
     {
-        const string connectionString =
-            "postgresql://cal_user:test@ep-example.neon.tech/calories?sslmode=disable&channel_binding=require";
+        var connectionString =
+            $"postgresql://cal_user:test@ep-example.neon.tech/calories?sslmode={sslMode}&channel_binding=require";
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => NeonConnectionStringNormalizer.Normalize(connectionString));
 
         Assert.Contains("secure", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Normalize_WhenTlsIsOmitted_DefaultsToRequire()
+    {
+        const string connectionString =
+            "postgresql://cal_user:test@ep-example.neon.tech/calories?channel_binding=require";
+
+        var normalized = NeonConnectionStringNormalizer.Normalize(connectionString);
+        var builder = new NpgsqlConnectionStringBuilder(normalized);
+
+        Assert.Equal(SslMode.Require, builder.SslMode);
     }
 
     [Fact]

@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Microsoft.AspNetCore.RateLimiting;
+
 namespace CaloriesTracking.Api.Controllers;
 
 [ApiController]
@@ -19,6 +21,7 @@ public class FoodController : ControllerBase
     }
 
     [HttpGet("search")]
+    [EnableRateLimiting("FoodSearch")]
     public async Task<IActionResult> SearchFoods([FromQuery] string? query, [FromQuery] int limit = 8)
     {
         if (string.IsNullOrWhiteSpace(query))

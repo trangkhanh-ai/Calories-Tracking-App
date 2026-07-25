@@ -119,14 +119,21 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
 
     private static byte[] Compress(byte[] imageBytes)
     {
-        using var image = Image.Load(imageBytes);
-        if (image.Width > MaxImageWidth)
+        try
         {
-            image.Mutate(x => x.Resize(MaxImageWidth, 0)); // 0 = giữ tỉ lệ
-        }
+            using var image = Image.Load(imageBytes);
+            if (image.Width > MaxImageWidth)
+            {
+                image.Mutate(x => x.Resize(MaxImageWidth, 0)); // 0 = giữ tỉ lệ
+            }
 
-        using var output = new MemoryStream();
-        image.Save(output, new JpegEncoder { Quality = JpegQuality });
-        return output.ToArray();
+            using var output = new MemoryStream();
+            image.Save(output, new JpegEncoder { Quality = JpegQuality });
+            return output.ToArray();
+        }
+        catch (Exception ex) when (ex is UnknownImageFormatException || ex is InvalidImageContentException)
+        {
+            throw new ArgumentException("Invalid image format or content.");
+        }
     }
 }

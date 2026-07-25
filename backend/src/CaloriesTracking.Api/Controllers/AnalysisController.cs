@@ -3,11 +3,14 @@ using CaloriesTracking.Application.Dtos.Analysis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+using Microsoft.AspNetCore.RateLimiting;
+
 namespace CaloriesTracking.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[EnableRateLimiting("GeminiAnalysis")]
 public class AnalysisController : ControllerBase
 {
     private readonly IFoodAnalysisService _foodAnalysisService;
@@ -42,6 +45,10 @@ public class AnalysisController : ControllerBase
         {
             var result = await _foodAnalysisService.AnalyzeAsync(imageBytes, cancellationToken);
             return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
