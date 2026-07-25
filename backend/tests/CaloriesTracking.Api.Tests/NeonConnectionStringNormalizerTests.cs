@@ -85,9 +85,10 @@ public sealed class NeonConnectionStringNormalizerTests
 
         var normalized = NeonConnectionStringNormalizer.Normalize(connectionString);
         var builder = new NpgsqlConnectionStringBuilder(normalized);
-
         Assert.Equal(SslMode.Require, builder.SslMode);
     }
+
+    [Fact]
     public void Normalize_WhenChannelBindingIsDisabled_Throws()
     {
         const string connectionString =

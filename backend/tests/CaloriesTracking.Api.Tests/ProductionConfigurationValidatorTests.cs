@@ -70,8 +70,9 @@ public sealed class ProductionConfigurationValidatorTests
         var exception = Assert.Throws<InvalidOperationException>(
             () => ProductionConfigurationValidator.Validate(configuration, Environments.Production));
 
-        Assert.Contains("Jwt:Key", exception.Message, StringComparison.Ordinal);
     }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]

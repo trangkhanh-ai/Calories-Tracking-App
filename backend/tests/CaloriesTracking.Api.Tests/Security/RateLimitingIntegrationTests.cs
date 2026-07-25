@@ -12,26 +12,13 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace CaloriesTracking.Api.Tests.Security;
 
-public class RateLimitingIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+public class RateLimitingIntegrationTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private const string TestJwtKey = "test_jwt_secret_key_must_be_at_least_32_bytes!";
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory _factory;
 
-    public RateLimitingIntegrationTests(WebApplicationFactory<Program> factory)
+    public RateLimitingIntegrationTests(CustomWebApplicationFactory factory)
     {
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Jwt:Key"] = TestJwtKey,
-                    ["Jwt:Issuer"] = "CaloriesTracking.Api",
-                    ["Jwt:Audience"] = "CaloriesTracking.Client"
-                });
-            });
-        });
+        _factory = factory;
     }
 
     private static string CreateTestJwtToken(string userId)
@@ -42,7 +29,7 @@ public class RateLimitingIntegrationTests : IClassFixture<WebApplicationFactory<
             new Claim(ClaimTypes.Name, userId)
         };
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtKey));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(CustomWebApplicationFactory.TestJwtKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(

@@ -18,30 +18,17 @@ using SixLabors.ImageSharp.PixelFormats;
 
 namespace CaloriesTracking.Api.Tests.Security;
 
-public class AnalysisControllerApiTests : IClassFixture<WebApplicationFactory<Program>>
+public class AnalysisControllerApiTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private const string TestJwtKey = "test_jwt_secret_key_must_be_at_least_32_bytes!";
     private readonly WebApplicationFactory<Program> _factory;
     private readonly Mock<IFoodAnalysisService> _mockFoodAnalysisService;
 
-    public AnalysisControllerApiTests(WebApplicationFactory<Program> factory)
+    public AnalysisControllerApiTests(CustomWebApplicationFactory factory)
     {
         _mockFoodAnalysisService = new Mock<IFoodAnalysisService>();
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Jwt:Key"] = TestJwtKey,
-                    ["Jwt:Issuer"] = "CaloriesTracking.Api",
-                    ["Jwt:Audience"] = "CaloriesTracking.Client",
-                    ["Gemini:ApiKey"] = "test-key"
-                });
-            });
-
             builder.ConfigureServices(services =>
             {
                 services.AddScoped(_ => _mockFoodAnalysisService.Object);
@@ -59,7 +46,7 @@ public class AnalysisControllerApiTests : IClassFixture<WebApplicationFactory<Pr
 
     private static string GenerateTestToken(string userId)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtKey));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(CustomWebApplicationFactory.TestJwtKey));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]

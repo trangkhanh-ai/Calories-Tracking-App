@@ -13,26 +13,14 @@ using SixLabors.ImageSharp.PixelFormats;
 
 namespace CaloriesTracking.Api.Tests.Security;
 
-public class ImageValidationTests : IClassFixture<WebApplicationFactory<Program>>
+public class ImageValidationTests : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory _factory;
     private readonly GeminiFoodAnalysisService _service;
 
-    public ImageValidationTests(WebApplicationFactory<Program> factory)
+    public ImageValidationTests(CustomWebApplicationFactory factory)
     {
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Jwt:Key"] = "test_jwt_secret_key_must_be_at_least_32_bytes!",
-                    ["Jwt:Issuer"] = "CaloriesTracking",
-                    ["Jwt:Audience"] = "CaloriesTracking"
-                });
-            });
-        });
+        _factory = factory;
 
         var httpMock = new Mock<HttpMessageHandler>();
         var httpClient = new HttpClient(httpMock.Object);
