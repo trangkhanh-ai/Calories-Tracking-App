@@ -98,15 +98,19 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
         request.Content = JsonContent.Create(requestBody);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway)
-                throw new HttpRequestException($"Gemini API error {(int)response.StatusCode}", null, response.StatusCode);
+            var status = (int)response.StatusCode;
+            if (status == 429 || status == 502 || status == 503 || status == 504)
+            {
+                throw new GeminiUnavailableException($"Gemini upstream error {status}.", response.StatusCode);
+            }
 
-            throw new InvalidOperationException($"Gemini API error {(int)response.StatusCode}: {responseText}");
+            throw new GeminiException($"Gemini upstream error {status}.", response.StatusCode);
         }
+
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         JsonDocument document;
         try
@@ -115,7 +119,7 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
         }
         catch (JsonException)
         {
-            throw new InvalidOperationException("Malformed Gemini JSON response.");
+            throw new GeminiException("Malformed Gemini JSON response.");
         }
 
         using (document)
@@ -127,14 +131,18 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
                     .GetProperty("content")
                     .GetProperty("parts")[0]
                     .GetProperty("text")
-                    .GetString() ?? throw new InvalidOperationException("Gemini returned an empty response.");
+                    .GetString() ?? throw new GeminiException("Gemini returned an empty response.");
 
                 return JsonSerializer.Deserialize<FoodAnalysisResponse>(modelText)
-                    ?? throw new InvalidOperationException("Failed to parse Gemini response as FoodAnalysisResponse.");
+                    ?? throw new GeminiException("Failed to parse Gemini response as FoodAnalysisResponse.");
             }
             catch (KeyNotFoundException)
             {
-                throw new InvalidOperationException("Unexpected Gemini JSON structure.");
+                throw new GeminiException("Unexpected Gemini JSON structure.");
+            }
+            catch (JsonException)
+            {
+                throw new GeminiException("Malformed Gemini JSON payload.");
             }
         }
     }

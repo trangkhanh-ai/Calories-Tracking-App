@@ -60,33 +60,47 @@ public static class DependencyInjection
         services.AddScoped<IDailyLogRepository, DailyLogRepository>();
         services.AddScoped<IAvatarStorageService, FakeAvatarStorageService>();
 
-        services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>()
-            .AddResilienceHandler("gemini-retry", builder =>
-            {
-                builder.AddRetry(new Microsoft.Extensions.Http.Resilience.HttpRetryStrategyOptions
-                {
-                    MaxRetryAttempts = 2,
-                    BackoffType = DelayBackoffType.Exponential,
-                    Delay = TimeSpan.FromSeconds(1),
-                    UseJitter = true,
-                    ShouldHandle = args =>
-                    {
-                        if (args.Outcome.Exception is HttpRequestException) 
-                            return new ValueTask<bool>(true);
-                        
-                        if (args.Outcome.Result is HttpResponseMessage response)
-                        {
-                            var status = (int)response.StatusCode;
-                            if (status == 429 || status == 502 || status == 503 || status == 504)
-                                return new ValueTask<bool>(true);
-                        }
-                        
-                        return new ValueTask<bool>(false);
-                    }
-                });
-                builder.AddTimeout(TimeSpan.FromSeconds(30));
-            });
+        services.AddGeminiClient();
 
         return services;
+    }
+
+    public static IHttpClientBuilder AddGeminiClient(
+        this IServiceCollection services,
+        TimeSpan? retryDelay = null,
+        TimeSpan? timeout = null)
+    {
+        var delay = retryDelay ?? TimeSpan.FromSeconds(1);
+        var timeoutDuration = timeout ?? TimeSpan.FromSeconds(30);
+
+        var builder = services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>();
+        
+        builder.AddResilienceHandler("gemini-retry", resBuilder =>
+        {
+            resBuilder.AddRetry(new HttpRetryStrategyOptions
+            {
+                MaxRetryAttempts = 2,
+                BackoffType = DelayBackoffType.Exponential,
+                Delay = delay,
+                UseJitter = delay > TimeSpan.FromMilliseconds(100),
+                ShouldHandle = args =>
+                {
+                    if (args.Outcome.Exception is GeminiUnavailableException || args.Outcome.Exception is HttpRequestException)
+                        return new ValueTask<bool>(true);
+
+                    if (args.Outcome.Result is HttpResponseMessage response)
+                    {
+                        var status = (int)response.StatusCode;
+                        if (status == 429 || status == 502 || status == 503 || status == 504)
+                            return new ValueTask<bool>(true);
+                    }
+
+                    return new ValueTask<bool>(false);
+                }
+            });
+            resBuilder.AddTimeout(timeoutDuration);
+        });
+
+        return builder;
     }
 }

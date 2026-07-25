@@ -1,9 +1,10 @@
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Analysis;
+using CaloriesTracking.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-
 using Microsoft.AspNetCore.RateLimiting;
+using Polly.Timeout;
 
 namespace CaloriesTracking.Api.Controllers;
 
@@ -34,6 +35,11 @@ public class AnalysisController : ControllerBase
         if (request.ImageBase64.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest(new { error = "Raw base64 string is required, do not include data URI prefix." });
+        }
+
+        if (request.ImageBase64.Length > 7_000_000)
+        {
+            return StatusCode(413, new { error = "Decoded image file exceeds 5MB limit." });
         }
 
         byte[] imageBytes;
@@ -73,19 +79,29 @@ public class AnalysisController : ControllerBase
         {
             return StatusCode(413, new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (GeminiUnavailableException ex)
         {
-            _logger.LogError(ex, "Gemini analysis error");
-            return StatusCode(500, new { error = "Failed to analyze image due to an internal error." });
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Gemini network error");
+            _logger.LogWarning(ex, "Gemini upstream unavailable.");
             return StatusCode(503, new { error = "Gemini AI service is temporarily unavailable." });
         }
-        catch (OperationCanceledException)
+        catch (GeminiException ex)
+        {
+            _logger.LogError(ex, "Gemini service exception.");
+            return StatusCode(500, new { error = "Failed to analyze image due to an internal error." });
+        }
+        catch (TimeoutRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Gemini analysis request timed out.");
+            return StatusCode(503, new { error = "Gemini AI service request timed out." });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return StatusCode(499, new { error = "Request was cancelled by client." });
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Gemini analysis request timed out.");
+            return StatusCode(503, new { error = "Gemini AI service request timed out." });
         }
         catch (Exception ex)
         {

@@ -87,7 +87,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("GeminiAnalysis", httpContext =>
     {
-        var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.User.FindFirst("sub")?.Value;
         var partitionKey = !string.IsNullOrWhiteSpace(userId)
             ? $"user_{userId}"
             : (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown_ip");
@@ -117,18 +118,26 @@ if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+    .AddJwtBearer();
+
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IConfiguration>((options, configuration) =>
     {
-        options.TokenValidationParameters = new TokenValidationParameters
+        var jwtSection = configuration.GetSection("Jwt");
+        var signingKey = jwtSection["Key"] ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(signingKey))
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtSection["Issuer"],
-            ValidAudience = jwtSection["Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
-            NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
-        };
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = jwtSection["Issuer"],
+                ValidAudience = jwtSection["Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
+            };
+        }
     });
 
 builder.Services.AddAuthorization();
