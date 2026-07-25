@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/network/api_client.dart';
 import '../services/auth_api_service.dart';
 
 final authServiceProvider = Provider((ref) => AuthApiService());
@@ -32,13 +34,45 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier(this._authService) : super(AuthState()) {
     _loadToken();
+    ApiClient.onUnauthorized = () {
+      if (mounted) {
+        logout();
+      }
+    };
   }
 
   Future<void> _loadToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
     if (token != null) {
-      state = state.copyWith(token: token);
+      if (_isTokenExpired(token)) {
+        await prefs.remove('jwt_token');
+        state = state.copyWith(token: null);
+      } else {
+        state = state.copyWith(token: token);
+      }
+    }
+  }
+
+  bool _isTokenExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+      final payload = parts[1];
+      var normalized = base64Url.normalize(payload);
+      final resp = utf8.decode(base64Url.decode(normalized));
+      final payloadMap = json.decode(resp);
+      if (payloadMap is! Map<String, dynamic>) return true;
+      if (payloadMap.containsKey('exp')) {
+        final exp = payloadMap['exp'];
+        if (exp is int) {
+          final expiresAt = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+          return DateTime.now().isAfter(expiresAt);
+        }
+      }
+      return false;
+    } catch (_) {
+      return true;
     }
   }
 

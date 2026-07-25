@@ -4,6 +4,27 @@ import '../../profile/services/profile_api_service.dart';
 import '../services/diary_api_service.dart';
 import '../services/local_storage_service.dart';
 import '../models/diary_dto.dart';
+import 'package:dio/dio.dart';
+
+enum DiaryStatus {
+  loading,
+  empty,
+  cached,
+  unauthorized,
+  timeout,
+  rateLimited,
+  serverError,
+  success
+}
+
+class DiaryState {
+  final DiaryStatus status;
+  final DailyDiaryDto? data;
+  final String? errorMessage;
+
+  DiaryState({required this.status, this.data, this.errorMessage});
+}
+
 
 final localStorageProvider = Provider<LocalStorageService>((ref) {
   return LocalStorageService();
@@ -15,7 +36,7 @@ final diaryApiServiceProvider = Provider<DiaryApiService>((ref) {
 
 final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
 
-final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
+final dailyDiaryProvider = FutureProvider<DiaryState>((ref) async {
   final diaryService = ref.watch(diaryApiServiceProvider);
   final storage = ref.watch(localStorageProvider);
   final date = ref.watch(selectedDateProvider);
@@ -23,8 +44,27 @@ final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
   try {
     // Primary: fetch directly from backend API (/api/diary/daily?date=...)
     final serverDiary = await diaryService.getDailyDiary(date);
-    return serverDiary;
-  } catch (_) {
+    final allEntries = [
+      ...serverDiary.breakfast,
+      ...serverDiary.lunch,
+      ...serverDiary.dinner,
+      ...serverDiary.snacks,
+    ];
+    
+    if (allEntries.isEmpty) {
+      return DiaryState(status: DiaryStatus.empty, data: serverDiary);
+    }
+    return DiaryState(status: DiaryStatus.success, data: serverDiary);
+  } on DioException catch (e) {
+    DiaryStatus errorStatus = DiaryStatus.serverError;
+    if (e.response?.statusCode == 401) {
+      errorStatus = DiaryStatus.unauthorized;
+    } else if (e.response?.statusCode == 429) {
+      errorStatus = DiaryStatus.rateLimited;
+    } else if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
+      errorStatus = DiaryStatus.timeout;
+    }
+
     // Fallback: local storage when offline or unauthenticated
     double targetCalories = (await storage.getDailyGoal()).toDouble();
     try {
@@ -75,7 +115,7 @@ final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
       }
     }
 
-    return DailyDiaryDto(
+    final localData = DailyDiaryDto(
       date: date,
       totalCaloriesConsumed: totalCalories,
       targetCalories: targetCalories,
@@ -84,6 +124,14 @@ final dailyDiaryProvider = FutureProvider<DailyDiaryDto>((ref) async {
       dinner: dinner,
       snacks: snacks,
     );
+
+    if (errorStatus == DiaryStatus.unauthorized || errorStatus == DiaryStatus.rateLimited) {
+       return DiaryState(status: errorStatus, data: localData);
+    }
+    
+    return DiaryState(status: DiaryStatus.cached, data: localData, errorMessage: 'Đang dùng dữ liệu ngoại tuyến.');
+  } catch (e) {
+    return DiaryState(status: DiaryStatus.serverError, errorMessage: e.toString());
   }
 });
 

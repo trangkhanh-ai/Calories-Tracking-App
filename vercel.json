@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "flutter build web --release --dart-define=BACKEND_BASE_URL=$BACKEND_BASE_URL",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "build/web",
   "rewrites": [
     {

@@ -24,7 +24,12 @@ class HomeScreen extends ConsumerWidget {
           child: CircularProgressIndicator(color: AppTheme.primary),
         ),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (dailyData) {
+        data: (diaryState) {
+          final dailyData = diaryState.data;
+          if (dailyData == null) {
+            return Center(child: Text('Không có dữ liệu. Lỗi: ${diaryState.errorMessage ?? "Không xác định"}'));
+          }
+
           final todayCalories = dailyData.totalCaloriesConsumed.toInt();
           final dailyGoal = dailyData.targetCalories.toInt();
           final remaining = dailyGoal - todayCalories;
@@ -148,6 +153,35 @@ class HomeScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
+                    if (diaryState.status != DiaryStatus.success && diaryState.status != DiaryStatus.empty)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: diaryState.status == DiaryStatus.cached ? AppTheme.surfaceVariant : AppTheme.error.withAlpha(20),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: diaryState.status == DiaryStatus.cached ? AppTheme.primary : AppTheme.error),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              diaryState.status == DiaryStatus.cached ? Icons.cloud_off : Icons.warning_amber_rounded,
+                              color: diaryState.status == DiaryStatus.cached ? AppTheme.primary : AppTheme.error,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _getStatusMessage(diaryState.status),
+                                style: GoogleFonts.outfit(
+                                  color: diaryState.status == DiaryStatus.cached ? AppTheme.onSurface : AppTheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ).animate().fadeIn(),
+
                     // ─── Calorie Ring Card ──────────────────────────────
                     _CalorieRingCard(
                           todayCalories: todayCalories,
@@ -207,6 +241,23 @@ class HomeScreen extends ConsumerWidget {
         duration: 400.ms,
       ),
     );
+  }
+
+  String _getStatusMessage(DiaryStatus status) {
+    switch (status) {
+      case DiaryStatus.cached:
+        return 'Chưa kết nối máy chủ. Đang dùng dữ liệu ngoại tuyến.';
+      case DiaryStatus.unauthorized:
+        return 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.';
+      case DiaryStatus.timeout:
+        return 'Kết nối máy chủ bị lỗi thời gian chờ. Đang dùng dữ liệu ngoại tuyến.';
+      case DiaryStatus.rateLimited:
+        return 'Thao tác quá nhanh. Đang dùng dữ liệu ngoại tuyến.';
+      case DiaryStatus.serverError:
+        return 'Lỗi máy chủ. Đang dùng dữ liệu ngoại tuyến.';
+      default:
+        return '';
+    }
   }
 }
 

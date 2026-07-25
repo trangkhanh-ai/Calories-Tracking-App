@@ -36,7 +36,7 @@ PostgreSQL (Neon)
 4. Chọn Driver **Connection string** (PostgreSQL URL).
 5. Chuỗi kết nối có dạng:
    ```text
-   postgresql://<user>:<password>@ep-xyz.region.aws.neon.tech/neondb?sslmode=require
+   postgresql://<user>:<password>@ep-xyz.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require
    ```
 6. Lưu chuỗi này lại để nhập vào Render.
 
@@ -57,11 +57,10 @@ PostgreSQL (Neon)
 | Variable | Sample / Description |
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
-| `ConnectionStrings__DefaultConnection` | `postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require` |
-| `Jwt__Key` | `PROD_JWT_SECRET_KEY_MUST_BE_AT_LEAST_32_BYTES_123456` |
-| `Jwt__Issuer` | `CaloriesTracking.Api` |
-| `Jwt__Audience` | `CaloriesTracking.Client` |
-| `Gemini__ApiKey` | `AIzaSy...` (Gemini Key vừa tạo) |
+| `ConnectionStrings__DefaultConnection` | `postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require&channel_binding=require` |
+| `JWT__KEY` | `[Mật khẩu ngẫu nhiên tối thiểu 32 ký tự, không lưu ở text]` |
+| `GEMINI__APIKEY` | `[Gemini API Key vừa tạo]` |
+| `CORS__ALLOWEDORIGINS__0` | `https://<tên-project>.vercel.app` |
 
 5. Chọn **Create Web Service** và chờ Render hoàn tất build & deploy.
 
@@ -75,12 +74,12 @@ PostgreSQL (Neon)
    - **Framework Preset**: `Other`
    - **Build Command**:
      ```bash
-     flutter build web --release --dart-define=BACKEND_BASE_URL=https://calories-tracking-api.onrender.com
+     bash scripts/vercel-build.sh
      ```
    - **Output Directory**: `build/web`
 4. Cấu hình Environment Variable (tùy chọn nếu muốn override dynamic build):
    - `BACKEND_BASE_URL`: `https://calories-tracking-api.onrender.com` *(Lưu ý: KHÔNG thêm `/api` ở cuối URL)*
-5. Chọn **Deploy**. File `vercel.json` trong repository sẽ tự động cấu hình SPA rewrite (`/index.html`) và security headers.
+5. Chọn **Deploy**. File `vercel.json` trong repository sẽ tự động cấu hình SPA rewrite (`/index.html`) và security headers. Vercel sẽ tự động build frontend Web khi có commit vào `main` dựa trên cấu hình `vercel.json`.
 
 ---
 
@@ -92,7 +91,7 @@ Sau khi triển khai hoàn tất cả 2 dịch vụ, thực hiện chuỗi test 
 ```bash
 curl -i https://calories-tracking-api.onrender.com/health
 ```
-- **Kỳ vọng**: HTTP 200 OK với body `{"status":"Healthy"}`.
+- **Kỳ vọng**: HTTP 200 OK với body `{"status":"ok"}`.
 
 ### 5.2 Registration & Authentication Test
 ```bash
@@ -137,5 +136,19 @@ curl -i "https://calories-tracking-api.onrender.com/api/diary/daily?date=2026-07
 ### 5.5 Gemini Image Analysis Check
 Send a valid base64 food image to `/api/analysis/food` with Authorization token.
 - **Kỳ vọng**: HTTP 200 OK trả về thông tin món ăn và dinh dưỡng phân tích bởi Gemini API.
+
+### 5.6 CORS Preflight Check
+Kiểm tra endpoint có trả về đúng Access-Control-Allow-Origin:
+```bash
+curl -i -X OPTIONS https://calories-tracking-api.onrender.com/health \
+  -H "Origin: https://<tên-project>.vercel.app" \
+  -H "Access-Control-Request-Method: GET"
+```
+- **Kỳ vọng**: HTTP 204 No Content và có header `Access-Control-Allow-Origin: https://<tên-project>.vercel.app`.
+
+### 5.7 Vercel Deep-link / SPA Check
+- Truy cập trực tiếp đường dẫn sâu (ví dụ: `https://<tên-project>.vercel.app/goal-setup`).
+- Tải lại trang (F5).
+- **Kỳ vọng**: Ứng dụng tải lên bình thường, không bị lỗi 404.
 
 ---

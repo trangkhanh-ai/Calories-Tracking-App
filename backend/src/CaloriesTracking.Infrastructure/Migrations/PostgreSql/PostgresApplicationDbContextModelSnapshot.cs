@@ -98,6 +98,9 @@ namespace CaloriesTracking.Infrastructure.Migrations.PostgreSql
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FdcId")
+                        .IsUnique();
+
                     b.ToTable("Foods", (string)null);
                 });
 

@@ -465,6 +465,16 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
         onSave: (quantity, mealType, date) async {
           Navigator.pop(sheetContext);
           try {
+            final request = LogMealRequest(
+              foodName: food.name,
+              caloriesPer100g: food.calories ?? 0.0,
+              quantity: quantity,
+              mealType: mealType,
+              date: date,
+            );
+            await ref.read(diaryApiServiceProvider).logMeal(request);
+
+            // Server succeeded, update local cache
             final entry = FoodEntry(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               name: food.name,
@@ -476,18 +486,7 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
               mealType: mealType,
             );
             await ref.read(localStorageProvider).addEntry(entry);
-            try {
-              final request = LogMealRequest(
-                foodName: food.name,
-                caloriesPer100g: food.calories ?? 0.0,
-                quantity: quantity,
-                mealType: mealType,
-                date: date,
-              );
-              await ref.read(diaryApiServiceProvider).logMeal(request);
-            } catch (_) {
-              // Log meal via API if server available, fallback to local storage
-            }
+
             ref.invalidate(dailyDiaryProvider);
             ref.invalidate(weeklyStatsProvider);
             if (mounted) {
@@ -504,7 +503,7 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
               final messenger = ScaffoldMessenger.of(context);
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text('Failed to add to diary.'),
+                  content: const Text('Lỗi kết nối. Không thể lưu nhật ký (server-first).'),
                   backgroundColor: AppTheme.error,
                 ),
               );

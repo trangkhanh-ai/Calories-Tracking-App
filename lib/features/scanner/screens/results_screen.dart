@@ -104,27 +104,25 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
     );
 
     try {
+      final request = LogMealRequest(
+        foodName: combinedName,
+        caloriesPer100g: _totalCalories,
+        quantity: 100.0,
+        mealType: mealMap[_selectedMeal] ?? 'Snack',
+        date: DateTime.now(),
+      );
+      await ref.read(diaryApiServiceProvider).logMeal(request);
+
       await ref.read(localStorageProvider).addEntry(entry);
-
-      try {
-        final request = LogMealRequest(
-          foodName: combinedName,
-          caloriesPer100g: _totalCalories,
-          quantity: 100.0,
-          mealType: mealMap[_selectedMeal] ?? 'Snack',
-          date: DateTime.now(),
-        );
-        await ref.read(diaryApiServiceProvider).logMeal(request);
-      } catch (_) {
-        // Fallback to local entry if API fails or offline
-      }
-
       ref.invalidate(dailyDiaryProvider);
       ref.invalidate(weeklyStatsProvider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e', style: GoogleFonts.outfit()), backgroundColor: AppTheme.error),
+          SnackBar(
+            content: Text('Lỗi kết nối. Không thể lưu nhật ký (server-first).', style: GoogleFonts.outfit()),
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
       return;

@@ -1,8 +1,8 @@
-# Deploy Flutter Web, Render Free và Neon Free
+# Deploy Flutter Web trên Vercel, .NET trên Render và PostgreSQL trên Neon
 
 Tài liệu này mô tả nền tảng production của Calories Tracking App:
 
-- Flutter Web trên GitHub Pages.
+- Flutter Web trên Vercel.
 - .NET 9 API dưới dạng một Render Web Service Free.
 - PostgreSQL trên Neon Free.
 
@@ -39,7 +39,7 @@ Backend hỗ trợ cả PostgreSQL URI và Npgsql keyword connection string. Pro
    | `ConnectionStrings__DefaultConnection` | Neon PostgreSQL URI đầy đủ |
    | `JWT__KEY` | Chuỗi bí mật ngẫu nhiên tối thiểu 32 ký tự |
    | `GEMINI__APIKEY` | Gemini API key còn hiệu lực |
-   | `CORS__ALLOWEDORIGINS__0` | Origin Pages, ví dụ `https://<owner>.github.io` |
+   | `CORS__ALLOWEDORIGINS__0` | Origin Vercel, ví dụ `https://<tên-project>.vercel.app` |
 
 `CORS__ALLOWEDORIGINS__0` là origin, không phải URL đầy đủ của repository. Không thêm `/Calories-Tracking-App`, query string hoặc dấu `/` cuối.
 
@@ -82,13 +82,12 @@ Nếu API không khởi động, kiểm tra log theo thứ tự:
 
 Không dán giá trị secret vào log, issue hoặc pull request khi xử lý lỗi.
 
-## 4. Cấu hình GitHub Pages
+## 4. Cấu hình Vercel
 
-Trong GitHub repository:
+Trên Vercel dashboard:
 
-1. Mở **Settings > Pages** và chọn **GitHub Actions** làm source.
-2. Mở **Settings > Secrets and variables > Actions > Variables**.
-3. Tạo Repository Variable:
+1. Import GitHub repository.
+2. Thiết lập Environment Variable trong phần Settings > Environment Variables:
 
    ```text
    BACKEND_BASE_URL=https://<service-name>.onrender.com
@@ -96,18 +95,20 @@ Trong GitHub repository:
 
 Giá trị này là cấu hình công khai cho Flutter Web, không phải secret. Không thêm `/api`, path khác hoặc dấu `/` cuối. Workflow từ chối giá trị thiếu, HTTP, malformed hoặc loopback.
 
-Workflow `.github/workflows/deploy.yml` chạy khi push `main` hoặc khi được kích hoạt thủ công. Không push/merge cho đến khi pull request đã được review và test.
+Vercel sẽ tự động đọc `vercel.json` và chạy script `scripts/vercel-build.sh` khi có commit vào `main`.
 
 ## 5. Kiểm tra end-to-end
 
 Chỉ tuyên bố deploy hoàn tất sau khi kiểm tra URL thật:
 
 1. `GET https://<service-name>.onrender.com/health` trả HTTP 200.
-2. Mở URL GitHub Pages và kiểm tra trang tải không có mixed-content error.
-3. Đăng ký hoặc đăng nhập để xác minh request API đi đến Render.
-4. Kiểm tra Browser DevTools để xác nhận response có CORS hợp lệ.
-5. Thử một request phân tích ảnh sau khi có JWT để xác minh Gemini key hoạt động.
-6. Restart/redeploy Render rồi kiểm tra dữ liệu vẫn tồn tại trên Neon.
+2. Kiểm tra CORS preflight: `curl -i -X OPTIONS https://<service-name>.onrender.com/health -H "Origin: https://<tên-project>.vercel.app" -H "Access-Control-Request-Method: GET"` trả HTTP 204.
+3. Mở URL Vercel và kiểm tra trang tải không có mixed-content error.
+4. Truy cập URL sâu trên Vercel (vd: `/goal-setup`) và tải lại trang để kiểm tra rewrite SPA không lỗi 404.
+5. Đăng ký hoặc đăng nhập để xác minh request API đi đến Render.
+6. Kiểm tra Browser DevTools để xác nhận response có CORS hợp lệ.
+7. Thử một request phân tích ảnh sau khi có JWT để xác minh Gemini key hoạt động.
+8. Restart/redeploy Render rồi kiểm tra dữ liệu vẫn tồn tại trên Neon.
 
 Nếu chưa có credential, quyền GitHub/Render hoặc URL thật, ghi rõ các bước chưa kiểm tra; không suy diễn rằng deployment đã thành công.
 
@@ -115,5 +116,5 @@ Nếu chưa có credential, quyền GitHub/Render hoặc URL thật, ghi rõ cá
 
 - Rollback ứng dụng bằng một commit/redeploy đã biết tốt; không thay đổi hoặc xóa Neon project trong quá trình rollback ứng dụng.
 - Không force-push hoặc rewrite Git history trong quy trình deploy này.
-- Nếu key từng xuất hiện trong Git history hoặc bundle Pages, phải revoke/rotate tại nhà cung cấp. Xóa key khỏi phiên bản hiện tại không vô hiệu hóa bản đã lộ.
+- Nếu key từng xuất hiện trong Git history hoặc bundle, phải revoke/rotate tại nhà cung cấp. Xóa key khỏi phiên bản hiện tại không vô hiệu hóa bản đã lộ.
 - Không đưa `ConnectionStrings__DefaultConnection`, `JWT__KEY` hoặc `GEMINI__APIKEY` vào Flutter `--dart-define`.

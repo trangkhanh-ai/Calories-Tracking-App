@@ -70,19 +70,40 @@ public static class DatabaseSeeder
             if (records.Count >= batchSize)
             {
                 await dbContext.Foods.AddRangeAsync(records);
-                await dbContext.SaveChangesAsync();
-                dbContext.ChangeTracker.Clear();
-                records.Clear();
-                Console.WriteLine($"Seeded {count} foods...");
+                try
+                {
+                    await dbContext.SaveChangesAsync();
+                    Console.WriteLine($"Seeded {count} foods...");
+                }
+                catch (DbUpdateException)
+                {
+                    // Concurrency: Another instance may have seeded the same items
+                    Console.WriteLine($"Duplicate detected or constraint violation at {count} foods. Skipping batch.");
+                }
+                finally
+                {
+                    dbContext.ChangeTracker.Clear();
+                    records.Clear();
+                }
             }
         }
 
         if (records.Count > 0)
         {
             await dbContext.Foods.AddRangeAsync(records);
-            await dbContext.SaveChangesAsync();
-            dbContext.ChangeTracker.Clear();
-            Console.WriteLine($"Finished seeding {count} foods.");
+            try
+            {
+                await dbContext.SaveChangesAsync();
+                Console.WriteLine($"Finished seeding {count} foods.");
+            }
+            catch (DbUpdateException)
+            {
+                Console.WriteLine($"Duplicate detected or constraint violation in final batch. Skipping.");
+            }
+            finally
+            {
+                dbContext.ChangeTracker.Clear();
+            }
         }
     }
 }

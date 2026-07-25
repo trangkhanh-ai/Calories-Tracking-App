@@ -93,6 +93,8 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(x => x.Sodium)
                 .HasPrecision(10, 2);
+
+            entity.HasIndex(x => x.FdcId).IsUnique();
         });
 
         modelBuilder.Entity<DailyLog>(entity =>
