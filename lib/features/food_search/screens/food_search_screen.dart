@@ -10,6 +10,7 @@ import '../models/food_nutrition_item.dart';
 import '../services/food_search_service.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../diary/models/food_entry.dart';
+import '../../diary/models/diary_dto.dart';
 
 class FoodSearchScreen extends ConsumerStatefulWidget {
   const FoodSearchScreen({super.key});
@@ -475,7 +476,20 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
               mealType: mealType,
             );
             await ref.read(localStorageProvider).addEntry(entry);
+            try {
+              final request = LogMealRequest(
+                foodName: food.name,
+                caloriesPer100g: food.calories ?? 0.0,
+                quantity: quantity,
+                mealType: mealType,
+                date: date,
+              );
+              await ref.read(diaryApiServiceProvider).logMeal(request);
+            } catch (_) {
+              // Log meal via API if server available, fallback to local storage
+            }
             ref.invalidate(dailyDiaryProvider);
+            ref.invalidate(weeklyStatsProvider);
             if (mounted) {
               final messenger = ScaffoldMessenger.of(context);
               messenger.showSnackBar(

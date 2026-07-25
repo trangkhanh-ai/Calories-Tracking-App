@@ -6,6 +6,21 @@ class AppConstants {
     defaultValue: 'http://localhost:5210',
   );
 
+  static String sanitizeBackendBaseUrl(String rawUrl) {
+    var trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return 'http://localhost:5210';
+    if (trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    if (trimmed.toLowerCase().endsWith('/api')) {
+      trimmed = trimmed.substring(0, trimmed.length - 4);
+    }
+    if (trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    return trimmed.isEmpty ? 'http://localhost:5210' : trimmed;
+  }
+
   static const List<double> servingScales = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
   static const List<String> servingScaleLabels = [
