@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_api_service.dart';
@@ -41,6 +42,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  String _formatAuthError(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      if (code == 401) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
+      if (code == 409) return 'Tên đăng nhập hoặc email đã được đăng ký.';
+      if (code == 400) {
+        final detail = e.response?.data is Map ? (e.response?.data['detail'] ?? e.response?.data['message']) : null;
+        return detail != null ? 'Lỗi dữ liệu: $detail' : 'Thông tin không hợp lệ. Mật khẩu phải từ 8 ký tự trở lên.';
+      }
+      if (code == 429) return 'Thao tác quá nhanh, vui lòng thử lại sau 1 phút.';
+      if (code != null && code >= 500) return 'Hệ thống bận (Mã $code). Vui lòng thử lại sau.';
+      return 'Không thể kết nối máy chủ. Vui lòng kiểm tra mạng.';
+    }
+    return e.toString();
+  }
+
   Future<bool> login(String username, String password) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
@@ -53,7 +70,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(isLoading: false, token: token);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
       return false;
     }
   }
@@ -80,7 +97,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(isLoading: false, token: token);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _formatAuthError(e));
       return false;
     }
   }

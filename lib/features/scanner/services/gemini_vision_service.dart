@@ -9,10 +9,13 @@ import '../models/food_analysis_result.dart';
 
 /// Gửi ảnh món ăn lên backend (.NET) để phân tích dinh dưỡng.
 /// Backend giữ Gemini API key và gọi Gemini Vision — client không giữ secret nào.
-/// Response schema: xem docs/API_SPEC.md.
 class GeminiVisionService {
   static const _analyzePath = '/analysis/food';
   static const _receiveTimeout = Duration(seconds: 60);
+
+  final Dio _dio;
+
+  GeminiVisionService({Dio? dio}) : _dio = dio ?? apiClient;
 
   Future<FoodAnalysisResult> analyzeImage(
     String imagePath, {
@@ -27,8 +30,6 @@ class GeminiVisionService {
     String imagePath, {
     int maxRetries = 3,
   }) async {
-    // Không nén ảnh ở client (package:image chạy đơn luồng trên Web, rất chậm).
-    // Backend sẽ resize/nén trước khi gửi Gemini.
     final base64Image = base64Encode(imageBytes);
 
     Exception? lastError;
@@ -36,11 +37,31 @@ class GeminiVisionService {
       try {
         return await _callBackend(base64Image, imagePath);
       } on DioException catch (e) {
-        // Hết hạn/thiếu phiên đăng nhập: báo ngay, retry vô ích
-        if (e.response?.statusCode == 401) {
+        final statusCode = e.response?.statusCode;
+        if (statusCode == 401) {
           throw Exception('Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.');
         }
-        lastError = Exception('Lỗi phân tích: ${e.response?.data ?? e.message}');
+        if (statusCode == 413) {
+          throw Exception('Kích thước ảnh quá lớn (>20MB). Vui lòng chọn hoặc chụp ảnh nhỏ hơn.');
+        }
+        if (statusCode == 429) {
+          throw Exception('Đã đạt giới hạn phân tích (5 lần/phút). Vui lòng chờ 1 phút và thử lại.');
+        }
+        if (statusCode == 400) {
+          final detail = e.response?.data is Map
+              ? (e.response?.data['detail'] ?? e.response?.data['message'])
+              : null;
+          throw Exception(detail != null
+              ? 'Lỗi dữ liệu: $detail'
+              : 'Ảnh không hợp lệ hoặc không chứa thực phẩm. Vui lòng chọn ảnh khác.');
+        }
+
+        if (statusCode != null && statusCode >= 500) {
+          lastError = Exception('Dịch vụ AI bận hoặc gặp sự cố tạm thời (Mã $statusCode). Vui lòng thử lại sau.');
+        } else {
+          lastError = Exception('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
+        }
+
         if (attempt < maxRetries) {
           await Future.delayed(Duration(seconds: attempt * 2));
         }
@@ -59,7 +80,7 @@ class GeminiVisionService {
     String base64Image,
     String imagePath,
   ) async {
-    final response = await apiClient.post(
+    final response = await _dio.post(
       _analyzePath,
       data: {'imageBase64': base64Image},
       options: Options(receiveTimeout: _receiveTimeout),
