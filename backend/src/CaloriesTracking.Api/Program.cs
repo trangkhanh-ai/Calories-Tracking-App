@@ -114,14 +114,6 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.EnvironmentName);
 
-var jwtSection = builder.Configuration.GetSection("Jwt");
-var signingKey = jwtSection["Key"];
-if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
-{
-    throw new InvalidOperationException(
-        "Jwt:Key is missing or too short (min 32 chars). Set it via appsettings.Development.json (dev) or the JWT__KEY environment variable (production).");
-}
-
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
@@ -151,6 +143,17 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+
+// Fail-fast: validate JWT key from the *final* configuration (after all
+// overlays — including WebApplicationFactory test overrides — are applied).
+var jwtKey = app.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:Key is missing or too short (min 32 chars). " +
+        "Development: run 'dotnet user-secrets set \"Jwt:Key\" \"<your-32+-char-key>\"'. " +
+        "Production: set the JWT__KEY environment variable.");
+}
 
 app.UseExceptionHandler();
 

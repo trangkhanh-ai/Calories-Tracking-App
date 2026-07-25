@@ -26,18 +26,16 @@
 - 🔐 **Đăng ký / Đăng nhập** — JWT 7 ngày, mật khẩu hash BCrypt. "Nhớ tài khoản" chỉ lưu username (không bao giờ lưu mật khẩu).
 - 👤 **Hồ sơ cá nhân** — chiều cao/cân nặng/tuổi/giới tính/mức vận động + avatar, đồng bộ backend.
 - 🎯 **Thiết lập mục tiêu calo** — sau khi đăng ký (hoặc đăng nhập lần đầu chưa có mục tiêu), app dẫn qua màn `/goal-setup`: chọn mức vận động (Không tập / Tập nhẹ / Tập vừa / Tập nhiều), backend tính BMI, BMR (Mifflin-St Jeor), TDEE (không tập ⇒ hệ số 1.2) và calo khuyến nghị theo 5 mục tiêu: giữ cân, giảm chậm (−300), giảm bình thường (−500), tăng chậm (+250), tăng bình thường (+500). Endpoint `GET /api/profile/calorie-goal` trả về cả `activityFactor` đã áp dụng.
-- 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. *Lưu ý: bữa ăn hiện lưu local trên máy (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Nối Diary API backend nằm trong Planned.*
+- 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. Nhật ký đồng bộ qua Diary API backend (server là source-of-truth).
 - 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA được seed bằng EF Core.
+- 🛡️ **Rate limiting** — endpoint phân tích ảnh, đăng ký, đăng nhập và tìm kiếm đều có rate limit per-IP hoặc per-user.
 - 🚀 **CI/CD** — GitHub Actions tự build Flutter Web và deploy GitHub Pages khi push `main`.
 
 ## 🔮 Planned / Future improvements
 
-- [ ] Nối client vào Diary API backend (hiện bữa ăn lưu local, backend đã có sẵn endpoints).
 - [ ] Lưu JWT bằng `flutter_secure_storage` + refresh-token flow.
-- [ ] Rate limiting cho endpoint phân tích ảnh (chống lạm dụng Gemini key).
 - [ ] Lưu avatar thật (hiện là `FakeAvatarStorageService`).
 - [ ] Offline cache nhật ký bằng Isar.
-- [ ] Unit tests cho `CalorieCalculator` (C#) và parse `FoodAnalysisResult` (Dart).
 
 ---
 
