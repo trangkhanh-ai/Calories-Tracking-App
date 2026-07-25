@@ -41,10 +41,18 @@ public static class NeonConnectionStringNormalizer
                 "The PostgreSQL connection string must include host, database, and username values.");
         }
 
-        if (builder.SslMode == SslMode.Disable)
+        var hasExplicitSslMode = builder.ShouldSerialize("SSL Mode");
+        if (hasExplicitSslMode)
         {
-            throw new InvalidOperationException(
-                "The PostgreSQL connection must keep secure TLS enabled; sslmode=disable is not allowed.");
+            if (builder.SslMode is SslMode.Disable or SslMode.Allow or SslMode.Prefer)
+            {
+                throw new InvalidOperationException(
+                    "The PostgreSQL connection must keep secure TLS enabled; sslmode=disable, allow, and prefer are not allowed.");
+            }
+        }
+        else
+        {
+            builder.SslMode = SslMode.Require;
         }
 
         var hasExplicitChannelBinding = builder.ShouldSerialize("Channel Binding");

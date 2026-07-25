@@ -98,35 +98,97 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
         request.Content = JsonContent.Create(requestBody);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Gemini API error {(int)response.StatusCode}: {responseText}");
+            var status = (int)response.StatusCode;
+            if (status == 429 || status == 502 || status == 503 || status == 504)
+            {
+                throw new GeminiUnavailableException($"Gemini upstream error {status}.", response.StatusCode);
+            }
+
+            throw new GeminiException($"Gemini upstream error {status}.", response.StatusCode);
         }
 
-        using var document = JsonDocument.Parse(responseText);
-        var modelText = document.RootElement
-            .GetProperty("candidates")[0]
-            .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
-            .GetString() ?? throw new InvalidOperationException("Gemini returned an empty response.");
+        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        return JsonSerializer.Deserialize<FoodAnalysisResponse>(modelText)
-            ?? throw new InvalidOperationException("Failed to parse Gemini response as FoodAnalysisResponse.");
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(responseText);
+        }
+        catch (JsonException)
+        {
+            throw new GeminiException("Malformed Gemini JSON response.");
+        }
+
+        using (document)
+        {
+            try
+            {
+                var modelText = document.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString() ?? throw new GeminiException("Gemini returned an empty response.");
+
+                return JsonSerializer.Deserialize<FoodAnalysisResponse>(modelText)
+                    ?? throw new GeminiException("Failed to parse Gemini response as FoodAnalysisResponse.");
+            }
+            catch (KeyNotFoundException)
+            {
+                throw new GeminiException("Unexpected Gemini JSON structure.");
+            }
+            catch (JsonException)
+            {
+                throw new GeminiException("Malformed Gemini JSON payload.");
+            }
+        }
     }
 
     private static byte[] Compress(byte[] imageBytes)
     {
-        using var image = Image.Load(imageBytes);
-        if (image.Width > MaxImageWidth)
+        try
         {
-            image.Mutate(x => x.Resize(MaxImageWidth, 0)); // 0 = giữ tỉ lệ
-        }
+            var format = Image.DetectFormat(imageBytes);
+            if (format == null)
+            {
+                throw new ArgumentException("Unknown image format.");
+            }
+            var formatName = format.Name.ToLowerInvariant();
+            if (formatName != "jpeg" && formatName != "png" && formatName != "webp")
+            {
+                throw new NotSupportedException($"Image format {formatName} is not supported.");
+            }
 
-        using var output = new MemoryStream();
-        image.Save(output, new JpegEncoder { Quality = JpegQuality });
-        return output.ToArray();
+            var info = Image.Identify(imageBytes);
+            if (info == null)
+            {
+                throw new ArgumentException("Not a valid image.");
+            }
+            if (info.Width > 8000 || info.Height > 8000)
+            {
+                throw new InvalidOperationException("Image dimensions exceed 8000x8000.");
+            }
+            if ((long)info.Width * info.Height > 20_000_000)
+            {
+                throw new InvalidOperationException("Image pixel count exceeds 20,000,000.");
+            }
+
+            using var image = Image.Load(imageBytes);
+            if (image.Width > MaxImageWidth)
+            {
+                image.Mutate(x => x.Resize(MaxImageWidth, 0)); // 0 = giữ tỉ lệ
+            }
+
+            using var output = new MemoryStream();
+            image.Save(output, new JpegEncoder { Quality = JpegQuality });
+            return output.ToArray();
+        }
+        catch (Exception ex) when (ex is UnknownImageFormatException || ex is InvalidImageContentException)
+        {
+            throw new ArgumentException("Invalid image format or content.");
+        }
     }
 }

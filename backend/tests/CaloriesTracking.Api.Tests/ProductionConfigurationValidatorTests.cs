@@ -59,6 +59,20 @@ public sealed class ProductionConfigurationValidatorTests
     }
 
     [Theory]
+    [InlineData("dev_jwt_secret_key_must_be_at_least_32_bytes_long_1234567890")]
+    [InlineData("test_jwt_secret_key_must_be_at_least_32_bytes!")]
+    [InlineData("YOUR_RANDOM_DEVELOPMENT_KEY_AT_LEAST_32_CHARACTERS")]
+    [InlineData("12345678901234567890123456789012")]
+    public void Validate_WhenProductionJwtKeyIsKnownPlaceholder_Throws(string jwtKey)
+    {
+        var configuration = BuildValidProductionConfiguration(("Jwt:Key", jwtKey));
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => ProductionConfigurationValidator.Validate(configuration, Environments.Production));
+
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
