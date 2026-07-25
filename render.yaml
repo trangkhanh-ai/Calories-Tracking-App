@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: calories-tracking-api
+    runtime: docker
+    plan: free
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: JWT__KEY
+        sync: false
+      - key: GEMINI__APIKEY
+        sync: false
+      - key: CORS__ALLOWEDORIGINS__0
+        sync: false

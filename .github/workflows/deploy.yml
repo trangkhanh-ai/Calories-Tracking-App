@@ -1,35 +1,92 @@
-name: Deploy to GitHub Pages
+name: Deploy Flutter Web to GitHub Pages
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build_and_deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      BACKEND_BASE_URL: ${{ vars.BACKEND_BASE_URL }}
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: 'stable'
+          flutter-version: "3.44.1"
+          channel: stable
+          cache: true
 
-      - name: Install Dependencies
-        run: flutter pub get
+      - name: Validate production backend URL
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ipaddress
+          import os
+          from urllib.parse import urlsplit
 
-      - name: Build Web
-        # BACKEND_BASE_URL: đặt trong Settings → Secrets and variables → Actions → Variables
-        # trỏ về backend production (vd https://calories-api.onrender.com)
-        run: >
-          flutter build web --release --base-href /Calories-Tracking-App/
-          --dart-define=BACKEND_BASE_URL=${{ vars.BACKEND_BASE_URL || 'http://localhost:5210' }}
+          value = os.environ.get("BACKEND_BASE_URL", "")
+          parsed = urlsplit(value)
+          hostname = (parsed.hostname or "").lower()
+
+          if (
+              parsed.scheme != "https"
+              or not hostname
+              or value.endswith("/")
+              or parsed.path not in ("", "/")
+              or parsed.query
+              or parsed.fragment
+              or parsed.username
+              or parsed.password
+              or hostname in {"localhost", "127.0.0.1", "::1"}
+          ):
+              raise SystemExit(
+                  "BACKEND_BASE_URL must be an HTTPS backend origin without a trailing slash"
+              )
+
+          try:
+              if ipaddress.ip_address(hostname).is_loopback:
+                  raise SystemExit("BACKEND_BASE_URL must not use a loopback host")
+          except ValueError:
+              pass
+          PY
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Install locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build web release
+        run: |
+          flutter build web --release \
+            --base-href "/Calories-Tracking-App/" \
+            "--dart-define=BACKEND_BASE_URL=$BACKEND_BASE_URL"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: build/web
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

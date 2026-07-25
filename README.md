@@ -8,7 +8,7 @@
 Ứng dụng theo dõi calo thông minh: chụp ảnh món ăn → **Google Gemini Vision** tự động nhận diện và phân tích dinh dưỡng (ưu tiên món Việt: phở, bún, cơm, bánh mì...).
 
 - **Frontend:** Flutter (Web / Android / iOS)
-- **Backend:** .NET 9 Web API (Clean Architecture) + EF Core + SQLite
+- **Backend:** .NET 9 Web API (Clean Architecture) + EF Core; SQLite cho development, PostgreSQL/Neon cho production
 - **AI:** Gemini 2.5 Flash (gọi từ backend — client không giữ API key)
 
 ## 📸 Screenshots
@@ -27,12 +27,11 @@
 - 👤 **Hồ sơ cá nhân** — chiều cao/cân nặng/tuổi/giới tính/mức vận động + avatar, đồng bộ backend.
 - 🎯 **Thiết lập mục tiêu calo** — sau khi đăng ký (hoặc đăng nhập lần đầu chưa có mục tiêu), app dẫn qua màn `/goal-setup`: chọn mức vận động (Không tập / Tập nhẹ / Tập vừa / Tập nhiều), backend tính BMI, BMR (Mifflin-St Jeor), TDEE (không tập ⇒ hệ số 1.2) và calo khuyến nghị theo 5 mục tiêu: giữ cân, giảm chậm (−300), giảm bình thường (−500), tăng chậm (+250), tăng bình thường (+500). Endpoint `GET /api/profile/calorie-goal` trả về cả `activityFactor` đã áp dụng.
 - 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. *Lưu ý: bữa ăn hiện lưu local trên máy (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Nối Diary API backend nằm trong Planned.*
-- 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA (seed sẵn vào SQLite).
+- 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA được seed bằng EF Core.
 - 🚀 **CI/CD** — GitHub Actions tự build Flutter Web và deploy GitHub Pages khi push `main`.
 
 ## 🔮 Planned / Future improvements
 
-- [ ] Deploy backend lên Render/Railway (Dockerfile đã sẵn — xem [Deploy](#-deploy-production)); chuyển SQLite → PostgreSQL để dữ liệu không mất khi redeploy.
 - [ ] Nối client vào Diary API backend (hiện bữa ăn lưu local, backend đã có sẵn endpoints).
 - [ ] Lưu JWT bằng `flutter_secure_storage` + refresh-token flow.
 - [ ] Rate limiting cho endpoint phân tích ảnh (chống lạm dụng Gemini key).
@@ -53,8 +52,8 @@
 │  API key nào     │ ◀──────────────────────── │       → Infrastructure    │
 └──────────────────┘                           └─────────┬─────────┬───────┘
                                                          │         │
-                                                  SQLite + EF Core │ x-goog-api-key
-                                                  (USDA seed data) ▼
+                                              SQLite dev / Neon prod │ x-goog-api-key
+                                                     + EF Core       ▼
                                                          Google Gemini 2.5 Flash
 ```
 
@@ -97,7 +96,7 @@ dotnet user-secrets set "Gemini:ApiKey" "YOUR_GEMINI_API_KEY"
 dotnet user-secrets set "Jwt:Key" "CHUOI_BI_MAT_NGAU_NHIEN_DAI_HON_32_KY_TU"
 ```
 
-(Production: dùng biến môi trường `GEMINI__APIKEY` và `JWT__KEY`.) Backend **từ chối khởi động** nếu thiếu `Jwt:Key`.
+(Production: dùng biến môi trường.) Backend **từ chối khởi động** nếu thiếu PostgreSQL connection string, `Jwt:Key`, Gemini key hoặc CORS HTTPS an toàn.
 
 ### Bước 2 — Chạy backend + frontend
 
@@ -121,20 +120,21 @@ flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:5210
 
 ## 📦 Deploy (Production)
 
-### Backend → Render/Railway/Fly.io
-Đã có sẵn [backend/Dockerfile](backend/Dockerfile). Biến môi trường cần đặt:
+### Backend → Render Free + Neon Free
+
+Repository có [render.yaml](render.yaml) để tạo đúng một Docker Web Service Free; Blueprint không tạo Render Postgres. Database production dùng Neon và connection string chỉ được nhập qua biến môi trường Render.
 
 | Biến | Ý nghĩa |
 |---|---|
 | `JWT__KEY` | Chuỗi bí mật ≥ 32 ký tự (app từ chối chạy nếu thiếu) |
 | `GEMINI__APIKEY` | Gemini API key |
-| `CORS__ALLOWEDORIGINS__0` | Origin frontend, vd `https://trangkhanh-ai.github.io` |
-| `ConnectionStrings__DefaultConnection` | Mặc định SQLite; nên trỏ PostgreSQL khi lên production |
+| `CORS__ALLOWEDORIGINS__0` | Origin GitHub Pages dạng `https://<owner>.github.io`, không có path hoặc dấu `/` cuối |
+| `ConnectionStrings__DefaultConnection` | Neon PostgreSQL URI có `sslmode=require&channel_binding=require` |
 
-Health check: `GET /health`.
+Hướng dẫn đầy đủ: [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md). Render dùng `GET /health` để kiểm tra database readiness; `GET /health/live` chỉ kiểm tra process liveness.
 
 ### Frontend → GitHub Pages
-Workflow [.github/workflows/deploy.yml](.github/workflows/deploy.yml) tự chạy khi push `main`. Đặt **Repository Variable** `BACKEND_BASE_URL` (Settings → Secrets and variables → Actions → Variables) trỏ về URL backend đã deploy, vd `https://calories-api.onrender.com`.
+Workflow [.github/workflows/deploy.yml](.github/workflows/deploy.yml) tự chạy khi push `main`. Đặt **Repository Variable** `BACKEND_BASE_URL` (Settings → Secrets and variables → Actions → Variables) bằng origin HTTPS của Render, không có `/api` hoặc dấu `/` cuối. Workflow sẽ dừng nếu biến thiếu, dùng HTTP hoặc trỏ về loopback.
 
 Build tay:
 ```bash
@@ -142,7 +142,7 @@ flutter build web --release --base-href "/Calories-Tracking-App/" \
   --dart-define=BACKEND_BASE_URL=https://calories-api.onrender.com
 ```
 
-> 🔗 Live demo: `https://trangkhanh-ai.github.io/Calories-Tracking-App/` — chỉ hoạt động đầy đủ (scan/đăng nhập) sau khi backend đã được deploy và `BACKEND_BASE_URL` được cấu hình.
+Sau khi deploy, phải kiểm tra URL Render thật, `GET /health`, CORS và URL GitHub Pages trước khi tuyên bố hệ thống đã hoạt động production.
 
 ---
 
