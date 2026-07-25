@@ -55,9 +55,15 @@ class ApiClient {
           }
           return handler.next(response);
         },
-        onError: (DioException e, handler) {
+        onError: (DioException e, handler) async {
+          if (e.response?.statusCode == 401) {
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('jwt_token');
+            } catch (_) {}
+          }
           if (kDebugMode) {
-            debugPrint('<-- Error ${e.message}');
+            debugPrint('<-- Error ${e.response?.statusCode} ${e.message}');
           }
           return handler.next(e);
         },
