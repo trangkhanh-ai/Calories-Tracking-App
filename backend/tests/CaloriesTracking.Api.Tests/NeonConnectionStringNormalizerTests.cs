@@ -88,8 +88,6 @@ public sealed class NeonConnectionStringNormalizerTests
 
         Assert.Equal(SslMode.Require, builder.SslMode);
     }
-
-    [Fact]
     public void Normalize_WhenChannelBindingIsDisabled_Throws()
     {
         const string connectionString =

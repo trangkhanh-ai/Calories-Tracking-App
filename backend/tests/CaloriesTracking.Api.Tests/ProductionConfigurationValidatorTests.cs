@@ -72,8 +72,6 @@ public sealed class ProductionConfigurationValidatorTests
 
         Assert.Contains("Jwt:Key", exception.Message, StringComparison.Ordinal);
     }
-
-    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
