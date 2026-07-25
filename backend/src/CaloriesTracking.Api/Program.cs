@@ -1,6 +1,7 @@
 using System.Text;
 using System.Threading.RateLimiting;
 using CaloriesTracking.Api.Configuration;
+using CaloriesTracking.Api.Middleware;
 using CaloriesTracking.Application;
 using CaloriesTracking.Infrastructure;
 using CaloriesTracking.Infrastructure.Data;
@@ -52,13 +53,18 @@ builder.Services.AddRateLimiter(options =>
         }, token);
     };
 
+    var authLoginLimit = int.TryParse(builder.Configuration["RateLimiting:AuthLoginPermitLimit"], out var l) ? l : 5;
+    var authRegisterLimit = int.TryParse(builder.Configuration["RateLimiting:AuthRegisterPermitLimit"], out var r) ? r : 3;
+    var foodSearchLimit = int.TryParse(builder.Configuration["RateLimiting:FoodSearchPermitLimit"], out var f) ? f : 60;
+    var geminiAnalysisLimit = int.TryParse(builder.Configuration["RateLimiting:GeminiAnalysisPermitLimit"], out var g) ? g : 5;
+
     options.AddPolicy("AuthLogin", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
-                PermitLimit = 5,
+                PermitLimit = authLoginLimit,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(1)
             }));
@@ -69,7 +75,7 @@ builder.Services.AddRateLimiter(options =>
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
-                PermitLimit = 3,
+                PermitLimit = authRegisterLimit,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(1)
             }));
@@ -80,7 +86,7 @@ builder.Services.AddRateLimiter(options =>
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
-                PermitLimit = 60,
+                PermitLimit = foodSearchLimit,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(1)
             }));
@@ -98,7 +104,7 @@ builder.Services.AddRateLimiter(options =>
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
-                PermitLimit = 5,
+                PermitLimit = geminiAnalysisLimit,
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(1)
             });
@@ -141,8 +147,12 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {

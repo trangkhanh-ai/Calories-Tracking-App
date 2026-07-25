@@ -11,4 +11,6 @@ public interface IDailyLogRepository
     void Add(DailyLog dailyLog);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default);
 }

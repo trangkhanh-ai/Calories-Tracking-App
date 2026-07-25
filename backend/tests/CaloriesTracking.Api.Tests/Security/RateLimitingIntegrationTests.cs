@@ -12,11 +12,29 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace CaloriesTracking.Api.Tests.Security;
 
-public class RateLimitingIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+public class RateLimitingTestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly CustomWebApplicationFactory _factory;
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Development");
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = CustomWebApplicationFactory.TestJwtKey,
+                ["Jwt:Issuer"] = "CaloriesTracking.Api",
+                ["Jwt:Audience"] = "CaloriesTracking.Client",
+                ["Gemini:ApiKey"] = "test_gemini_api_key_placeholder"
+            });
+        });
+    }
+}
 
-    public RateLimitingIntegrationTests(CustomWebApplicationFactory factory)
+public class RateLimitingIntegrationTests : IClassFixture<RateLimitingTestWebApplicationFactory>
+{
+    private readonly RateLimitingTestWebApplicationFactory _factory;
+
+    public RateLimitingIntegrationTests(RateLimitingTestWebApplicationFactory factory)
     {
         _factory = factory;
     }

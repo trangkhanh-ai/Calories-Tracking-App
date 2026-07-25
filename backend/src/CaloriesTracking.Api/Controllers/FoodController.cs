@@ -53,11 +53,23 @@ public class FoodController : ControllerBase
         }
 
         var normalizedQuery = query.ToLower().Trim();
+        var isPostgres = _dbContext.Database.ProviderName?.Contains("PostgreSQL", StringComparison.OrdinalIgnoreCase) == true;
 
-        var matchesDb = await _dbContext.Foods
-            .Where(f => EF.Functions.Like(f.Name, $"%{normalizedQuery}%"))
-            .Take(limit * 3)
-            .ToListAsync();
+        List<Food> matchesDb;
+        if (isPostgres)
+        {
+            matchesDb = await _dbContext.Foods
+                .Where(f => EF.Functions.ILike(f.Name, $"%{normalizedQuery}%"))
+                .Take(limit * 3)
+                .ToListAsync();
+        }
+        else
+        {
+            matchesDb = await _dbContext.Foods
+                .Where(f => EF.Functions.Like(f.Name, $"%{normalizedQuery}%"))
+                .Take(limit * 3)
+                .ToListAsync();
+        }
 
         var matches = matchesDb
             .GroupBy(f => f.Name.ToLower())

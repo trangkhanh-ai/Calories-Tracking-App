@@ -66,6 +66,11 @@ public class DiaryController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == 0) return Unauthorized();
 
+        if (startDate != default && endDate != default && startDate > endDate)
+        {
+            return BadRequest(new { message = "startDate must be on or before endDate." });
+        }
+
         var result = await _diaryService.GetStatsAsync(userId, startDate, endDate, cancellationToken);
         return Ok(result);
     }
