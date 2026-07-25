@@ -102,25 +102,72 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway)
+                throw new HttpRequestException($"Gemini API error {(int)response.StatusCode}", null, response.StatusCode);
+
             throw new InvalidOperationException($"Gemini API error {(int)response.StatusCode}: {responseText}");
         }
 
-        using var document = JsonDocument.Parse(responseText);
-        var modelText = document.RootElement
-            .GetProperty("candidates")[0]
-            .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
-            .GetString() ?? throw new InvalidOperationException("Gemini returned an empty response.");
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(responseText);
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("Malformed Gemini JSON response.");
+        }
 
-        return JsonSerializer.Deserialize<FoodAnalysisResponse>(modelText)
-            ?? throw new InvalidOperationException("Failed to parse Gemini response as FoodAnalysisResponse.");
+        using (document)
+        {
+            try
+            {
+                var modelText = document.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString() ?? throw new InvalidOperationException("Gemini returned an empty response.");
+
+                return JsonSerializer.Deserialize<FoodAnalysisResponse>(modelText)
+                    ?? throw new InvalidOperationException("Failed to parse Gemini response as FoodAnalysisResponse.");
+            }
+            catch (KeyNotFoundException)
+            {
+                throw new InvalidOperationException("Unexpected Gemini JSON structure.");
+            }
+        }
     }
 
     private static byte[] Compress(byte[] imageBytes)
     {
         try
         {
+            var format = Image.DetectFormat(imageBytes);
+            if (format == null)
+            {
+                throw new ArgumentException("Unknown image format.");
+            }
+            var formatName = format.Name.ToLowerInvariant();
+            if (formatName != "jpeg" && formatName != "png" && formatName != "webp")
+            {
+                throw new NotSupportedException($"Image format {formatName} is not supported.");
+            }
+
+            var info = Image.Identify(imageBytes);
+            if (info == null)
+            {
+                throw new ArgumentException("Not a valid image.");
+            }
+            if (info.Width > 8000 || info.Height > 8000)
+            {
+                throw new InvalidOperationException("Image dimensions exceed 8000x8000.");
+            }
+            if ((long)info.Width * info.Height > 20_000_000)
+            {
+                throw new InvalidOperationException("Image pixel count exceeds 20,000,000.");
+            }
+
             using var image = Image.Load(imageBytes);
             if (image.Width > MaxImageWidth)
             {

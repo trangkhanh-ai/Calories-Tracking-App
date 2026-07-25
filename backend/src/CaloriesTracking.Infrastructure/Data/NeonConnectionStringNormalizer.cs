@@ -42,13 +42,15 @@ public static class NeonConnectionStringNormalizer
         }
 
         var hasExplicitSslMode = builder.ShouldSerialize("SSL Mode");
-        if (hasExplicitSslMode && builder.SslMode is SslMode.Disable or SslMode.Allow or SslMode.Prefer)
+        if (hasExplicitSslMode)
         {
-            throw new InvalidOperationException(
-                "The PostgreSQL connection must keep secure TLS enabled; sslmode=disable and sslmode=prefer are not allowed.");
+            if (builder.SslMode is SslMode.Disable or SslMode.Allow or SslMode.Prefer)
+            {
+                throw new InvalidOperationException(
+                    "The PostgreSQL connection must keep secure TLS enabled; sslmode=disable, allow, and prefer are not allowed.");
+            }
         }
-
-        if (!hasExplicitSslMode || builder.SslMode < SslMode.Require)
+        else
         {
             builder.SslMode = SslMode.Require;
         }

@@ -33,10 +33,28 @@ builder.Services.AddCors(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/json";
+
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)retryAfter.TotalSeconds).ToString();
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            status = 429,
+            title = "Too many requests",
+            detail = "Please wait before trying again."
+        }, token);
+    };
 
     options.AddPolicy("AuthLogin", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -47,7 +65,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("AuthRegister", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -58,7 +76,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("FoodSearch", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString(),
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -72,7 +90,7 @@ builder.Services.AddRateLimiter(options =>
         var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var partitionKey = !string.IsNullOrWhiteSpace(userId)
             ? $"user_{userId}"
-            : $"ip_{httpContext.Connection.RemoteIpAddress?.ToString() ?? httpContext.Request.Headers.Host.ToString()}";
+            : (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown_ip");
 
         return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: partitionKey,
@@ -140,9 +158,9 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health/live", HealthEndpoints.Liveness);
 app.MapGet("/health", HealthEndpoints.ReadinessAsync);
@@ -150,6 +168,8 @@ app.MapGet("/health", HealthEndpoints.ReadinessAsync);
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
 
 public static class HealthEndpoints
 {

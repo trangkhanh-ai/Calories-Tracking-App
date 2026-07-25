@@ -5,6 +5,8 @@ using CaloriesTracking.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace CaloriesTracking.Infrastructure;
 
@@ -58,11 +60,32 @@ public static class DependencyInjection
         services.AddScoped<IDailyLogRepository, DailyLogRepository>();
         services.AddScoped<IAvatarStorageService, FakeAvatarStorageService>();
 
-        services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(60);
-        })
-        .AddStandardResilienceHandler();
+        services.AddHttpClient<IFoodAnalysisService, GeminiFoodAnalysisService>()
+            .AddResilienceHandler("gemini-retry", builder =>
+            {
+                builder.AddRetry(new Microsoft.Extensions.Http.Resilience.HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = 2,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromSeconds(1),
+                    UseJitter = true,
+                    ShouldHandle = args =>
+                    {
+                        if (args.Outcome.Exception is HttpRequestException) 
+                            return new ValueTask<bool>(true);
+                        
+                        if (args.Outcome.Result is HttpResponseMessage response)
+                        {
+                            var status = (int)response.StatusCode;
+                            if (status == 429 || status == 502 || status == 503 || status == 504)
+                                return new ValueTask<bool>(true);
+                        }
+                        
+                        return new ValueTask<bool>(false);
+                    }
+                });
+                builder.AddTimeout(TimeSpan.FromSeconds(30));
+            });
 
         return services;
     }
