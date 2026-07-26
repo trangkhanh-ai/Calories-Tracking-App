@@ -9,6 +9,8 @@ services:
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+      - key: HOSTING__BEHINDTLSTERMINATINGPROXY
+        value: "true"
       - key: ConnectionStrings__DefaultConnection
         sync: false
       - key: JWT__KEY
