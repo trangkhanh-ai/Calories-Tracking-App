@@ -1,9 +1,17 @@
-name: Deploy Flutter Web to GitHub Pages
+name: Deploy Flutter Web to GitHub Pages (deprecated)
 
+# DEPRECATED — Vercel is the production frontend platform (see
+# docs/DEPLOYMENT_GUIDE.md §6 and docs/DEPLOY_RENDER.md).
+#
+# The automatic `push: main` trigger is removed deliberately. Leaving two live
+# frontend deploy paths meant two origins to whitelist, while render.yaml
+# declares only CORS__ALLOWEDORIGINS__0 — so whichever origin lost that slot
+# would silently fail every API call.
+#
+# Kept behind workflow_dispatch (never automatic) so the Pages site can still be
+# published on demand if Vercel is unavailable. Note it builds with
+# --base-href "/Calories-Tracking-App/", which Vercel does not use.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
