@@ -561,6 +561,32 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         if mapping_key is not None:
             scan_generic_text(f"{mapping_key}={node.value}", line)
 
+    def inspect_direct_sections(
+        items: list[tuple[object, object]],
+        resolve_child_merges: bool,
+    ) -> None:
+        for key_node, value_node in items:
+            if not isinstance(key_node, ScalarNode) or not isinstance(
+                value_node, MappingNode
+            ):
+                continue
+            section = key_node.value.casefold()
+            if section not in {"jwt", "gemini"}:
+                continue
+            target_key = "key" if section == "jwt" else "apikey"
+            category = "JWT_KEY" if section == "jwt" else "GEMINI_API_KEY"
+            child_items = (
+                effective_mapping_items(value_node)
+                if resolve_child_merges
+                else value_node.value
+            )
+            for child_key, child_value in child_items:
+                if (
+                    isinstance(child_key, ScalarNode)
+                    and child_key.value.casefold() == target_key
+                ):
+                    record_finding(category, child_value)
+
     def visit(node: object) -> None:
         node_id = id(node)
         if node_id in visited:
@@ -568,29 +594,19 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         visited.add(node_id)
 
         if isinstance(node, MappingNode):
-            items = effective_mapping_items(node)
-            for key_node, value_node in items:
-                if not isinstance(key_node, ScalarNode) or not isinstance(
-                    value_node, MappingNode
-                ):
-                    continue
-                section = key_node.value.casefold()
-                if section not in {"jwt", "gemini"}:
-                    continue
-                target_key = "key" if section == "jwt" else "apikey"
-                category = "JWT_KEY" if section == "jwt" else "GEMINI_API_KEY"
-                for child_key, child_value in effective_mapping_items(value_node):
-                    if (
-                        isinstance(child_key, ScalarNode)
-                        and child_key.value.casefold() == target_key
-                    ):
-                        record_finding(category, child_value)
-            for key_node, value_node in items:
+            raw_items = node.value
+            inspect_direct_sections(raw_items, resolve_child_merges=False)
+            inspect_direct_sections(
+                effective_mapping_items(node), resolve_child_merges=True
+            )
+            for key_node, value_node in raw_items:
                 scan_scalar(key_node)
                 mapping_key = (
                     key_node.value if isinstance(key_node, ScalarNode) else None
                 )
                 scan_scalar(value_node, mapping_key)
+                if not isinstance(key_node, ScalarNode):
+                    visit(key_node)
                 if not isinstance(value_node, ScalarNode):
                     visit(value_node)
         elif isinstance(node, SequenceNode):

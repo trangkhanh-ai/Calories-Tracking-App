@@ -861,6 +861,64 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (jwt, gemini):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_yaml_duplicate_flat_and_nested_keys_preserve_literal_findings(self) -> None:
+        flat_jwt = "duplicate-flat-jwt-secret-1234567890"  # secret-scan: test-fixture
+        flat_gemini = "duplicate-flat-gemini-secret"  # secret-scan: test-fixture
+        nested_jwt = "duplicate-nested-jwt-secret-1234567890"  # secret-scan: test-fixture
+        nested_gemini = "duplicate-nested-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "duplicate-flat.yaml",
+            f'"Jwt:Key": {flat_jwt}\n'  # secret-scan: test-fixture
+            '"Jwt:Key": ${JWT_KEY} # runtime placeholder\n'
+            f'"Gemini:ApiKey": {flat_gemini}\n'  # secret-scan: test-fixture
+            '"Gemini:ApiKey": ${GEMINI_KEY} # runtime placeholder\n',
+        )
+        self.track(
+            "duplicate-nested.yaml",
+            "Jwt:\n"
+            f"  Key: {nested_jwt}\n"
+            "  Key: ${JWT_KEY} # runtime placeholder\n"
+            "Gemini:\n"
+            f"  ApiKey: {nested_gemini}\n"
+            "  ApiKey: ${GEMINI_KEY} # runtime placeholder\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY duplicate-flat.yaml:1 [REDACTED]",
+                "GEMINI_API_KEY duplicate-flat.yaml:3 [REDACTED]",
+                "JWT_KEY duplicate-nested.yaml:2 [REDACTED]",
+                "GEMINI_API_KEY duplicate-nested.yaml:5 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (flat_jwt, flat_gemini, nested_jwt, nested_gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_ast_recurses_into_complex_mapping_keys(self) -> None:
+        secret = "complex-key-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "complex-key.yaml",
+            f'? ["GEMINI__APIKEY={secret}"]\n'  # secret-scan: test-fixture
+            ": ignored\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "GEMINI_API_KEY complex-key.yaml:1 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn(secret, result.stdout)
+
     def test_yaml_dependency_failure_fails_closed(self) -> None:
         secret = "dependency-jwt-secret-1234567890"  # secret-scan: test-fixture
         self.track("dependency.yaml", f"Jwt:\n  Key: {secret}\n")
