@@ -1,13 +1,19 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/network/api_client.dart';
+import '../../../core/network/network_failure.dart';
 import '../services/auth_api_service.dart';
+import '../utils/jwt_validator.dart';
 
 final authServiceProvider = Provider((ref) => AuthApiService());
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  // Riverpod disposes the notifier itself when this provider is disposed, and
+  // AuthNotifier.dispose deregisters its unauthorized listener there. Adding an
+  // explicit ref.onDispose(notifier.dispose) here would dispose it twice.
   return AuthNotifier(ref.watch(authServiceProvider));
 });
 
@@ -16,14 +22,23 @@ class AuthState {
   final String? token;
   final String? error;
 
-  AuthState({this.isLoading = false, this.token, this.error});
+  const AuthState({this.isLoading = false, this.token, this.error});
 
   bool get isAuthenticated => token != null;
 
-  AuthState copyWith({bool? isLoading, String? token, String? error, bool clearError = false}) {
+  /// Note the explicit [clearToken] flag: a nullable `token` parameter alone
+  /// cannot distinguish "leave the token alone" from "clear it", which is why
+  /// logout previously failed to null it out.
+  AuthState copyWith({
+    bool? isLoading,
+    String? token,
+    String? error,
+    bool clearError = false,
+    bool clearToken = false,
+  }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
-      token: token ?? this.token,
+      token: clearToken ? null : (token ?? this.token),
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -31,65 +46,70 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthApiService _authService;
+  final JwtValidator jwtValidator;
+  late final VoidCallback _removeUnauthorizedListener;
 
-  AuthNotifier(this._authService) : super(AuthState()) {
-    _loadToken();
-    ApiClient.onUnauthorized = () {
-      if (mounted) {
-        logout();
-      }
-    };
+  AuthNotifier(
+    this._authService, {
+    this.jwtValidator = const JwtValidator(),
+    UnauthorizedCoordinator? coordinator,
+  }) : super(const AuthState()) {
+    final target = coordinator ?? ApiClient.unauthorizedCoordinator;
+    _removeUnauthorizedListener = target.addListener(_handleUnauthorized);
+    restoreSession();
   }
 
-  Future<void> _loadToken() async {
+  /// Invoked by the coordinator, which guarantees a single run even when
+  /// several 401s arrive together.
+  Future<void> _handleUnauthorized() async {
+    if (!mounted) return;
+    await logout();
+  }
+
+  @override
+  void dispose() {
+    _removeUnauthorizedListener();
+    super.dispose();
+  }
+
+  /// Restores a stored session at startup, discarding an expired or malformed
+  /// token instead of letting it drive a 401 redirect loop.
+  Future<void> restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
-    if (token != null) {
-      if (_isTokenExpired(token)) {
-        await prefs.remove('jwt_token');
-        state = state.copyWith(token: null);
-      } else {
-        state = state.copyWith(token: token);
+
+    if (token == null) {
+      return;
+    }
+
+    if (!jwtValidator.isValid(token)) {
+      await prefs.remove('jwt_token');
+      if (mounted) {
+        state = state.copyWith(clearToken: true);
       }
+      return;
+    }
+
+    if (mounted) {
+      state = state.copyWith(token: token);
     }
   }
 
-  bool _isTokenExpired(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return true;
-      final payload = parts[1];
-      var normalized = base64Url.normalize(payload);
-      final resp = utf8.decode(base64Url.decode(normalized));
-      final payloadMap = json.decode(resp);
-      if (payloadMap is! Map<String, dynamic>) return true;
-      if (payloadMap.containsKey('exp')) {
-        final exp = payloadMap['exp'];
-        if (exp is int) {
-          final expiresAt = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-          return DateTime.now().isAfter(expiresAt);
-        }
-      }
-      return false;
-    } catch (_) {
-      return true;
-    }
-  }
+  String _formatAuthError(Object error) {
+    if (error is DioException) {
+      final failure = NetworkFailure.fromDioException(error);
 
-  String _formatAuthError(Object e) {
-    if (e is DioException) {
-      final code = e.response?.statusCode;
-      if (code == 401) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
-      if (code == 409) return 'Tên đăng nhập hoặc email đã được đăng ký.';
-      if (code == 400) {
-        final detail = e.response?.data is Map ? (e.response?.data['detail'] ?? e.response?.data['message']) : null;
-        return detail != null ? 'Lỗi dữ liệu: $detail' : 'Thông tin không hợp lệ. Mật khẩu phải từ 8 ký tự trở lên.';
-      }
-      if (code == 429) return 'Thao tác quá nhanh, vui lòng thử lại sau 1 phút.';
-      if (code != null && code >= 500) return 'Hệ thống bận (Mã $code). Vui lòng thử lại sau.';
-      return 'Không thể kết nối máy chủ. Vui lòng kiểm tra mạng.';
+      // Login/register need domain-specific wording for the credential cases;
+      // everything else uses the shared failure model.
+      return switch (failure) {
+        UnauthorizedFailure() => 'Tên đăng nhập hoặc mật khẩu không chính xác.',
+        ConflictFailure() => 'Tên đăng nhập hoặc email đã được đăng ký.',
+        _ => failure.message,
+      };
     }
-    return e.toString();
+
+    // Never surface a raw toString() to the user.
+    return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
   }
 
   Future<bool> login(String username, String password) async {
@@ -139,7 +159,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
-    state = AuthState();
+
+    // A fresh AuthState guarantees token == null and isAuthenticated == false.
+    if (mounted) {
+      state = const AuthState();
+    }
   }
 
   // ─── Remember Me ──────────────────────────────────────────────────────────
