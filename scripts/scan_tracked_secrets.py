@@ -70,12 +70,8 @@ GEMINI_CHILD = re.compile(
     rf"^\s*[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
     re.IGNORECASE,
 )
-SECTION_HEADER = re.compile(
-    r"^(?P<indent>\s*)[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*(?:\{\s*)?(?:#.*)?$",
-    re.IGNORECASE,
-)
-SECTION_OBJECT_START = re.compile(
-    r"[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*\{",
+YAML_SECTION_HEADER = re.compile(
+    r"^(?P<indent>\s*)[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*(?:#.*)?$",
     re.IGNORECASE,
 )
 EXPLICIT_PLACEHOLDER = re.compile(
@@ -100,13 +96,22 @@ class Finding:
         return f"{self.category} {self.path}:{self.line} [REDACTED]"
 
 
+@dataclass(frozen=True)
+class JsonToken:
+    kind: str
+    value: str
+    line: int
+
+
 @dataclass
-class SectionState:
+class YamlSectionState:
     section: str
     indent: int
-    brace_depth: int | None = None
     direct_child_indent: int | None = None
-    awaiting_open_brace: bool = False
+
+
+class JsonParseError(ValueError):
+    pass
 
 
 def tracked_files(repo: Path) -> list[TrackedFile]:
@@ -162,107 +167,223 @@ def is_obvious_test_fixture(path: str, value: str) -> bool:
     }
 
 
-def structural_brace_counts(line: str) -> tuple[int, int]:
-    """Count object braces while ignoring quoted values and placeholders."""
-    opening = 0
-    closing = 0
-    quote: str | None = None
-    escaped = False
+def tokenize_jsonc(text: str) -> list[JsonToken]:
+    tokens: list[JsonToken] = []
     index = 0
-    while index < len(line):
-        character = line[index]
-        if quote:
-            if escaped:
-                escaped = False
-            elif character == "\\":
-                escaped = True
-            elif character == quote:
-                quote = None
+    line = 1
+    length = len(text)
+    escape_values = {
+        '"': '"',
+        "\\": "\\",
+        "/": "/",
+        "b": "\b",
+        "f": "\f",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+    }
+
+    while index < length:
+        character = text[index]
+        if character == "\ufeff" and index == 0:
             index += 1
             continue
-
-        if character in "\"'":
-            quote = character
+        if character.isspace():
+            if character == "\n":
+                line += 1
             index += 1
             continue
-        if character == "#" or line.startswith("//", index):
-            break
-        if line.startswith("${{", index):
-            placeholder_end = line.find("}}", index + 3)
-            if placeholder_end != -1:
-                index = placeholder_end + 2
-                continue
-        if line.startswith("${", index):
-            placeholder_end = line.find("}", index + 2)
-            if placeholder_end != -1:
-                index = placeholder_end + 1
-                continue
-        if character == "{":
-            opening += 1
-        elif character == "}":
-            closing += 1
-        index += 1
-    return opening, closing
-
-
-def find_section_object_starts(
-    line: str,
-    brace_depth: int,
-) -> tuple[list[tuple[str, int]], int]:
-    """Find unquoted section objects still open at line end and minimum depth."""
-    quote: str | None = None
-    escaped = False
-    current_depth = brace_depth
-    minimum_depth = brace_depth
-    section_starts: list[tuple[str, int]] = []
-    index = 0
-    while index < len(line):
-        character = line[index]
-        if quote:
-            if escaped:
-                escaped = False
-            elif character == "\\":
-                escaped = True
-            elif character == quote:
-                quote = None
+        if text.startswith("//", index):
+            index += 2
+            while index < length and text[index] not in "\r\n":
+                index += 1
+            continue
+        if text.startswith("/*", index):
+            index += 2
+            while index < length and not text.startswith("*/", index):
+                if text[index] == "\n":
+                    line += 1
+                index += 1
+            if index >= length:
+                raise JsonParseError("unterminated block comment")
+            index += 2
+            continue
+        if character in "{}[]:,":
+            tokens.append(JsonToken(character, character, line))
             index += 1
             continue
+        if character == '"':
+            token_line = line
+            index += 1
+            value: list[str] = []
+            while index < length:
+                character = text[index]
+                if character == '"':
+                    index += 1
+                    tokens.append(JsonToken("string", "".join(value), token_line))
+                    break
+                if character in "\r\n" or ord(character) < 0x20:
+                    raise JsonParseError("invalid string character")
+                if character != "\\":
+                    value.append(character)
+                    index += 1
+                    continue
 
-        if character == "#" or line.startswith("//", index):
-            break
-        if line.startswith("${{", index):
-            placeholder_end = line.find("}}", index + 3)
-            if placeholder_end != -1:
-                index = placeholder_end + 2
-                continue
-        if line.startswith("${", index):
-            placeholder_end = line.find("}", index + 2)
-            if placeholder_end != -1:
-                index = placeholder_end + 1
-                continue
+                index += 1
+                if index >= length:
+                    raise JsonParseError("unterminated string escape")
+                escape = text[index]
+                if escape != "u":
+                    if escape not in escape_values:
+                        raise JsonParseError("invalid string escape")
+                    value.append(escape_values[escape])
+                    index += 1
+                    continue
 
-        property_boundary = index == 0 or line[index - 1] in "{[, \t"
-        object_match = SECTION_OBJECT_START.match(line, index) if property_boundary else None
-        if object_match:
-            current_depth += 1
-            section_starts.append((object_match.group("section").lower(), current_depth))
-            index = object_match.end()
+                hexadecimal = text[index + 1 : index + 5]
+                if len(hexadecimal) != 4 or not all(
+                    digit in "0123456789abcdefABCDEF" for digit in hexadecimal
+                ):
+                    raise JsonParseError("invalid unicode escape")
+                codepoint = int(hexadecimal, 16)
+                index += 5
+                if 0xD800 <= codepoint <= 0xDBFF and text.startswith("\\u", index):
+                    low_hexadecimal = text[index + 2 : index + 6]
+                    if len(low_hexadecimal) == 4 and all(
+                        digit in "0123456789abcdefABCDEF" for digit in low_hexadecimal
+                    ):
+                        low_codepoint = int(low_hexadecimal, 16)
+                        if 0xDC00 <= low_codepoint <= 0xDFFF:
+                            codepoint = (
+                                0x10000
+                                + ((codepoint - 0xD800) << 10)
+                                + (low_codepoint - 0xDC00)
+                            )
+                            index += 6
+                value.append(chr(codepoint))
+            else:
+                raise JsonParseError("unterminated string")
             continue
 
-        if character in "\"'":
-            quote = character
-        elif character == "{":
-            current_depth += 1
-        elif character == "}":
-            current_depth = max(0, current_depth - 1)
-            minimum_depth = min(minimum_depth, current_depth)
-            section_starts = [
-                section_start
-                for section_start in section_starts
-                if section_start[1] <= current_depth
-            ]
-        index += 1
-    return section_starts, minimum_depth
+        token_line = line
+        start = index
+        while index < length:
+            character = text[index]
+            if character.isspace() or character in "{}[]:,":
+                break
+            if text.startswith("//", index) or text.startswith("/*", index):
+                break
+            index += 1
+        if start == index:
+            raise JsonParseError("unexpected character")
+        tokens.append(JsonToken("scalar", text[start:index], token_line))
+
+    tokens.append(JsonToken("eof", "", line))
+    return tokens
+
+
+class JsonSecretParser:
+    def __init__(self, path: str, text: str) -> None:
+        self.path = path
+        self.lines = text.splitlines()
+        self.tokens = tokenize_jsonc(text)
+        self.index = 0
+        self.findings: list[Finding] = []
+        self.seen_findings: set[tuple[str, int]] = set()
+
+    def parse(self) -> list[Finding]:
+        self._parse_value(None)
+        self._expect("eof")
+        return self.findings
+
+    def _peek(self) -> JsonToken:
+        return self.tokens[self.index]
+
+    def _advance(self) -> JsonToken:
+        token = self._peek()
+        self.index += 1
+        return token
+
+    def _accept(self, kind: str) -> bool:
+        if self._peek().kind != kind:
+            return False
+        self._advance()
+        return True
+
+    def _expect(self, kind: str) -> JsonToken:
+        token = self._advance()
+        if token.kind != kind:
+            raise JsonParseError(f"expected {kind}")
+        return token
+
+    def _parse_value(self, section: str | None) -> None:
+        token = self._peek()
+        if token.kind == "{":
+            self._parse_object(section)
+        elif token.kind == "[":
+            self._parse_array()
+        elif token.kind in {"string", "scalar"}:
+            self._advance()
+        else:
+            raise JsonParseError("expected value")
+
+    def _parse_object(self, section: str | None) -> None:
+        self._expect("{")
+        if self._accept("}"):
+            return
+
+        while True:
+            property_token = self._expect("string")
+            self._expect(":")
+            value_token = self._peek()
+            property_name = property_token.value.lower()
+            category = None
+            if section == "jwt" and property_name == "key":
+                category = "JWT_KEY"
+            elif section == "gemini" and property_name == "apikey":
+                category = "GEMINI_API_KEY"
+            if category and value_token.kind in {"string", "scalar"}:
+                self._record_finding(category, value_token)
+
+            child_section = property_name if property_name in {"jwt", "gemini"} else None
+            self._parse_value(child_section)
+            if self._accept(","):
+                if self._accept("}"):
+                    return
+                continue
+            self._expect("}")
+            return
+
+    def _parse_array(self) -> None:
+        self._expect("[")
+        if self._accept("]"):
+            return
+        while True:
+            self._parse_value(None)
+            if self._accept(","):
+                if self._accept("]"):
+                    return
+                continue
+            self._expect("]")
+            return
+
+    def _record_finding(self, category: str, token: JsonToken) -> None:
+        if is_placeholder(token.value) or is_obvious_test_fixture(self.path, token.value):
+            return
+        source_line = self.lines[token.line - 1] if token.line <= len(self.lines) else ""
+        if FIXTURE_MARKER in source_line.lower() and is_test_fixture_path(self.path):
+            return
+        finding_key = (category, token.line)
+        if finding_key not in self.seen_findings:
+            self.findings.append(Finding(category, self.path, token.line))
+            self.seen_findings.add(finding_key)
+
+
+def scan_json_secrets(path: str, text: str) -> list[Finding] | None:
+    try:
+        return JsonSecretParser(path, text).parse()
+    except (JsonParseError, RecursionError):
+        return None
 
 
 def scan_line(
@@ -270,6 +391,7 @@ def scan_line(
     line_number: int,
     line: str,
     direct_sections: set[str] | None = None,
+    include_inline_sections: bool = True,
 ) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
@@ -314,10 +436,11 @@ def scan_line(
         if has_literal_match(pattern):
             add_finding(category)
 
-    if has_literal_match(JWT_NESTED):
-        add_finding("JWT_KEY")
-    if has_literal_match(GEMINI_NESTED):
-        add_finding("GEMINI_API_KEY")
+    if include_inline_sections:
+        if has_literal_match(JWT_NESTED):
+            add_finding("JWT_KEY")
+        if has_literal_match(GEMINI_NESTED):
+            add_finding("GEMINI_API_KEY")
 
     active_direct_sections = direct_sections or set()
     if "jwt" in active_direct_sections and has_literal_match(JWT_CHILD):
@@ -351,96 +474,55 @@ def scan(repo: Path) -> list[Finding]:
             continue
 
         text = content.decode("utf-8", errors="replace")
-        active_sections: list[SectionState] = []
-        brace_depth = 0
+        suffix = candidate.suffix.lower()
+        parsed_json_findings = (
+            scan_json_secrets(entry.path, text)
+            if suffix in {".json", ".jsonc"}
+            else None
+        )
+        json_findings_by_line: dict[int, list[Finding]] = {}
+        if parsed_json_findings is not None:
+            for finding in parsed_json_findings:
+                json_findings_by_line.setdefault(finding.line, []).append(finding)
+
+        yaml_sections: list[YamlSectionState] = []
         for line_number, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
             indentation = len(line) - len(line.lstrip())
-            is_comment_or_blank = not stripped or stripped.startswith(("#", "//"))
-            opening_braces, closing_braces = structural_brace_counts(line)
-
-            retained_sections: list[SectionState] = []
-            activated_section_ids: set[int] = set()
-            for state in active_sections:
-                if state.brace_depth is not None:
-                    retained_sections.append(state)
-                    continue
-                if state.awaiting_open_brace and not is_comment_or_blank:
-                    if opening_braces and indentation <= state.indent:
-                        state.brace_depth = brace_depth + 1
-                        state.awaiting_open_brace = False
-                        activated_section_ids.add(id(state))
-                    elif indentation > state.indent:
-                        state.awaiting_open_brace = False
-                    else:
-                        continue
-                elif (
-                    not state.awaiting_open_brace
-                    and not is_comment_or_blank
-                    and indentation <= state.indent
-                ):
-                    continue
-                retained_sections.append(state)
-            active_sections = retained_sections
-
-            header_match = SECTION_HEADER.match(line)
-            object_starts, minimum_brace_depth = find_section_object_starts(
-                line,
-                brace_depth,
-            )
 
             direct_sections: set[str] = set()
-            is_section_content = (
-                not is_comment_or_blank and stripped not in {"{", "}", "},"}
-            )
-            if is_section_content:
-                for state in active_sections:
-                    if state.brace_depth is not None:
-                        if brace_depth == state.brace_depth:
-                            direct_sections.add(state.section)
-                    elif not state.awaiting_open_brace and indentation > state.indent:
+            if suffix in {".yaml", ".yml"}:
+                is_yaml_content = bool(stripped) and not stripped.startswith("#")
+                if is_yaml_content:
+                    yaml_sections = [
+                        state for state in yaml_sections if indentation > state.indent
+                    ]
+                    for state in yaml_sections:
                         if state.direct_child_indent is None:
                             state.direct_child_indent = indentation
                         if indentation == state.direct_child_indent:
                             direct_sections.add(state.section)
+                    header_match = YAML_SECTION_HEADER.match(line)
+                    if header_match:
+                        yaml_sections.append(
+                            YamlSectionState(
+                                section=header_match.group("section").lower(),
+                                indent=len(header_match.group("indent")),
+                            )
+                        )
 
-            findings.extend(
-                scan_line(
-                    entry.path,
-                    line_number,
-                    line,
-                    direct_sections,
-                )
+            line_findings = scan_line(
+                entry.path,
+                line_number,
+                line,
+                direct_sections,
+                include_inline_sections=parsed_json_findings is None,
             )
-
-            next_brace_depth = max(0, brace_depth + opening_braces - closing_braces)
-            active_sections = [
-                state
-                for state in active_sections
-                if (
-                    (
-                        id(state) in activated_section_ids
-                        and state.brace_depth is not None
-                        and state.brace_depth <= next_brace_depth
-                    )
-                    or state.brace_depth is None
-                    or state.brace_depth <= minimum_brace_depth
-                )
-            ]
-            active_sections.extend(
-                SectionState(section=section, indent=indentation, brace_depth=depth)
-                for section, depth in object_starts
-            )
-            if header_match and not object_starts:
-                active_sections.append(
-                    SectionState(
-                        section=header_match.group("section").lower(),
-                        indent=len(header_match.group("indent")),
-                        awaiting_open_brace=True,
-                    )
-                )
-
-            brace_depth = next_brace_depth
+            findings.extend(line_findings)
+            found_categories = {finding.category for finding in line_findings}
+            for finding in json_findings_by_line.get(line_number, []):
+                if finding.category not in found_categories:
+                    findings.append(finding)
     return findings
 
 

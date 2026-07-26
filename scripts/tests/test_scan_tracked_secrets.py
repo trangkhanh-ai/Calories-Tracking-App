@@ -356,6 +356,90 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (jwt, gemini):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_json_finds_later_direct_children_after_nested_objects(self) -> None:
+        jwt = "later-direct-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "later-direct-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "later-direct.json",
+            "{\n"
+            '  "Jwt": {"Issuer": "escaped \\"issuer\\"", "Metadata": {"Values": [1, {"Key": "nested"}]}, '
+            f'"Key": "{jwt}"}},\n'
+            '  "Gemini": {"Model": "flash", "Metadata": {"ApiKey": "nested"}, '
+            f'"ApiKey": "{gemini}"}}\n'
+            "}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY later-direct.json:2 [REDACTED]",
+                "GEMINI_API_KEY later-direct.json:3 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_json_finds_pending_brace_objects_with_inline_keys(self) -> None:
+        jwt = "pending-inline-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "pending-inline-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "pending-inline.json",
+            "{\n"
+            '  "Jwt":\n'
+            f'  {{ "Key": "{jwt}" }},\n'
+            '  "Gemini":\n'
+            f'  {{ "ApiKey": "{gemini}" }}\n'
+            "}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY pending-inline.json:3 [REDACTED]",
+                "GEMINI_API_KEY pending-inline.json:5 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_jsonc_handles_line_and_block_comments_around_section_headers(self) -> None:
+        jwt = "jsonc-comment-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "jsonc-comment-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "commented.jsonc",
+            "{\n"
+            '  "Jwt": /* signing configuration */ {\n'
+            f'    "Key": "{jwt}"\n'
+            "  },\n"
+            '  "Gemini": // provider configuration\n'
+            "  {\n"
+            f'    "ApiKey": "{gemini}"\n'
+            "  },\n"
+            "}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY commented.jsonc:3 [REDACTED]",
+                "GEMINI_API_KEY commented.jsonc:7 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
     def test_whitespace_suffix_after_placeholder_is_detected_for_assignments_and_nested_key(self) -> None:
         password = "Password=${JWT_KEY} known-fallback"  # secret-scan: test-fixture
         jwt = "JWT__KEY=${{ secrets.JWT_KEY }} known-fallback"  # secret-scan: test-fixture
