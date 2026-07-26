@@ -62,7 +62,7 @@ public sealed class DatabaseStartupInitializer
     private bool GetSeedingEnabled()
     {
         var configuredValue = _configuration["Seeding:Enabled"];
-        if (_environment.IsProduction() && !HasExplicitProductionSetting())
+        if (_environment.IsProduction() && !HasValidExplicitProductionSetting())
         {
             throw new InvalidOperationException(
                 "Seeding:Enabled must be explicitly configured in Production.");
@@ -81,7 +81,7 @@ public sealed class DatabaseStartupInitializer
         return enabled;
     }
 
-    private bool HasExplicitProductionSetting()
+    private bool HasValidExplicitProductionSetting()
     {
         if (_configuration is not IConfigurationRoot configurationRoot)
         {
@@ -90,18 +90,19 @@ public sealed class DatabaseStartupInitializer
 
         foreach (var provider in configurationRoot.Providers.Reverse())
         {
-            if (!provider.TryGet("Seeding:Enabled", out _))
+            if (!provider.TryGet("Seeding:Enabled", out var providerValue))
             {
                 continue;
             }
 
             // appsettings.json supplies the safe false default. Production must
             // choose through a higher-priority deployment-specific provider.
-            return provider is not JsonConfigurationProvider jsonProvider ||
-                   !string.Equals(
-                       Path.GetFileName(jsonProvider.Source.Path),
-                       "appsettings.json",
-                       StringComparison.OrdinalIgnoreCase);
+            var isBaseAppSettings = provider is JsonConfigurationProvider jsonProvider &&
+                                    string.Equals(
+                                        Path.GetFileName(jsonProvider.Source.Path),
+                                        "appsettings.json",
+                                        StringComparison.OrdinalIgnoreCase);
+            return !isBaseAppSettings && !string.IsNullOrWhiteSpace(providerValue);
         }
 
         return false;

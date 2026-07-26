@@ -156,6 +156,27 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
         Assert.NotEmpty(await context.Database.GetAppliedMigrationsAsync());
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task Initialize_InProductionWithBlankExplicitSeedingOverride_FailsClearly(
+        string? configuredValue)
+    {
+        await using var connection = await OpenDatabaseAsync();
+        await using var context = CreateContext(connection);
+        var initializer = CreateInitializer(
+            context,
+            BuildBaseConfiguration(("Seeding:Enabled", configuredValue)),
+            Environments.Production);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => initializer.InitializeAsync(_seedFolder));
+
+        Assert.Contains("Seeding:Enabled", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Production", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void SeedDataPathResolver_InDevelopment_FallsBackToSourceTree()
     {
@@ -272,7 +293,7 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
             .AddInMemoryCollection(values.ToDictionary(value => value.Key, value => (string?)value.Value))
             .Build();
 
-    private static IConfiguration BuildBaseConfiguration(params (string Key, string Value)[] overrides)
+    private static IConfiguration BuildBaseConfiguration(params (string Key, string? Value)[] overrides)
     {
         var appSettingsPath = FindAppSettingsPath();
         return new ConfigurationBuilder()
