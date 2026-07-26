@@ -254,8 +254,8 @@ public sealed class PostgresUsdaFoodSeederTests
         using var barrier = new Barrier(2);
         var first = CreateSeeder(firstContext, batchSize: 2);
         var second = CreateSeeder(secondContext, batchSize: 2);
-        first.BeforeExpiredLeaseClaim = () => barrier.SignalAndWait(TimeSpan.FromSeconds(15));
-        second.BeforeExpiredLeaseClaim = () => barrier.SignalAndWait(TimeSpan.FromSeconds(15));
+        first.BeforeExpiredLeaseClaim = () => PostgresRaceBarrier.Wait(barrier, "expired-lease race");
+        second.BeforeExpiredLeaseClaim = () => PostgresRaceBarrier.Wait(barrier, "expired-lease race");
 
         var outcomes = await Task.WhenAll(
             Task.Run(() => first.SeedAsync(SeedFolder)),

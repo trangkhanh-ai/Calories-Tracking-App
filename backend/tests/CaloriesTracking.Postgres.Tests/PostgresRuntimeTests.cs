@@ -455,10 +455,7 @@ public sealed class PostgresRuntimeTests
             var result = await inner.GetByNormalizedEmailAsync(normalizedEmail, cancellationToken);
             if (result is null && Interlocked.Exchange(ref _waited, 1) == 0)
             {
-                if (!barrier.SignalAndWait(TimeSpan.FromSeconds(15)))
-                {
-                    throw new TimeoutException("Registration precheck barrier timed out.");
-                }
+                PostgresRaceBarrier.Wait(barrier, "registration precheck");
             }
 
             return result;
@@ -477,7 +474,7 @@ public sealed class PostgresRuntimeTests
             var result = await inner.GetDailyLogAsync(userId, date, cancellationToken);
             if ((result is not null) == expectExisting && Interlocked.Exchange(ref _waited, 1) == 0)
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(15));
+                PostgresRaceBarrier.Wait(barrier, "daily-log race");
             }
 
             return result;
@@ -505,7 +502,7 @@ public sealed class PostgresRuntimeTests
             var result = await inner.GetCustomByNormalizedNameAsync(normalizedName, cancellationToken);
             if (result is null && Interlocked.Exchange(ref _waited, 1) == 0)
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(15));
+                PostgresRaceBarrier.Wait(barrier, "custom-food race");
             }
 
             return result;

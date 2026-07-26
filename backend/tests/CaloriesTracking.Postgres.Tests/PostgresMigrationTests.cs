@@ -246,10 +246,35 @@ public sealed class PostgresMigrationTests
     {
         const string sql =
             """
-            SELECT indexname, indexdef, i.indisunique, pg_get_expr(i.indpred, i.indrelid)
+            SELECT
+                p.indexname,
+                i.indisunique,
+                pg_get_expr(i.indpred, i.indrelid),
+                keys.key_columns
             FROM pg_catalog.pg_indexes p
-            JOIN pg_catalog.pg_class c ON c.relname = p.indexname
-            JOIN pg_catalog.pg_index i ON i.indexrelid = c.oid
+            JOIN pg_catalog.pg_namespace index_namespace
+                ON index_namespace.nspname = p.schemaname
+            JOIN pg_catalog.pg_class index_class
+                ON index_class.relnamespace = index_namespace.oid
+                AND index_class.relname = p.indexname
+            JOIN pg_catalog.pg_index i
+                ON i.indexrelid = index_class.oid
+            JOIN pg_catalog.pg_class table_class
+                ON table_class.oid = i.indrelid
+                AND table_class.relname = p.tablename
+            JOIN pg_catalog.pg_namespace table_namespace
+                ON table_namespace.oid = table_class.relnamespace
+                AND table_namespace.nspname = p.schemaname
+            LEFT JOIN LATERAL (
+                SELECT array_agg(
+                    COALESCE(attribute.attname::text, '<expression>')
+                    ORDER BY key.ordinality) AS key_columns
+                FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS key(attnum, ordinality)
+                LEFT JOIN pg_catalog.pg_attribute attribute
+                    ON attribute.attrelid = i.indrelid
+                    AND attribute.attnum = key.attnum
+                WHERE key.ordinality <= i.indnkeyatts
+            ) keys ON true
             WHERE p.schemaname = 'public';
             """;
 
@@ -259,9 +284,9 @@ public sealed class PostgresMigrationTests
         while (await reader.ReadAsync())
         {
             indexes[reader.GetString(0)] = new IndexDefinition(
-                reader.GetString(1),
-                reader.GetBoolean(2),
-                reader.IsDBNull(3) ? string.Empty : reader.GetString(3));
+                reader.GetBoolean(1),
+                reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                reader.GetFieldValue<string[]>(3));
         }
 
         return indexes;
@@ -274,10 +299,7 @@ public sealed class PostgresMigrationTests
     {
         Assert.True(indexes.TryGetValue(name, out var index), $"Expected index {name} to exist.");
         Assert.True(index.Unique, $"Expected index {name} to be unique.");
-        foreach (var column in columns)
-        {
-            Assert.Contains($"\"{column}\"", index.Definition, StringComparison.Ordinal);
-        }
+        Assert.Equal(columns, index.KeyColumns);
     }
 
     private static PostgresException? FindPostgresException(Exception exception)
@@ -293,5 +315,39 @@ public sealed class PostgresMigrationTests
         return null;
     }
 
-    private sealed record IndexDefinition(string Definition, bool Unique, string Predicate);
+    private sealed record IndexDefinition(bool Unique, string Predicate, string[] KeyColumns);
+}
+
+public sealed class PostgresTestDatabaseTests
+{
+    [Theory]
+    [InlineData(SslMode.Disable, SslMode.Require)]
+    [InlineData(SslMode.Allow, SslMode.Require)]
+    [InlineData(SslMode.Prefer, SslMode.Require)]
+    [InlineData(SslMode.Require, SslMode.Require)]
+    [InlineData(SslMode.VerifyCA, SslMode.VerifyCA)]
+    [InlineData(SslMode.VerifyFull, SslMode.VerifyFull)]
+    public void SecureBuilder_PreservesOrRaisesTlsVerification(
+        SslMode configuredMode,
+        SslMode expectedMode)
+    {
+        var builder = PostgresTestDatabase.SecureBuilder(
+            $"Host=localhost;Database=postgres;Username=user;Password=secret;Ssl Mode={configuredMode}");
+
+        Assert.Equal(expectedMode, builder.SslMode);
+        Assert.Equal(ChannelBinding.Require, builder.ChannelBinding);
+        Assert.False(builder.IncludeErrorDetail);
+        Assert.False(builder.LogParameters);
+        Assert.False(builder.PersistSecurityInfo);
+    }
+
+    [Fact]
+    public void SecureBuilder_WhenSslModeIsOmitted_RequiresTls()
+    {
+        var builder = PostgresTestDatabase.SecureBuilder(
+            "Host=localhost;Database=postgres;Username=user;Password=secret");
+
+        Assert.Equal(SslMode.Require, builder.SslMode);
+        Assert.Equal(ChannelBinding.Require, builder.ChannelBinding);
+    }
 }

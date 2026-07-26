@@ -22,6 +22,21 @@ public sealed class PostgresFactAttribute : FactAttribute
     }
 }
 
+internal static class PostgresRaceBarrier
+{
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
+
+    public static void Wait(Barrier barrier, string raceName)
+    {
+        ArgumentNullException.ThrowIfNull(barrier);
+        if (!barrier.SignalAndWait(Timeout))
+        {
+            throw new TimeoutException(
+                $"PostgreSQL {raceName} did not reach every participant within {Timeout.TotalSeconds:0} seconds.");
+        }
+    }
+}
+
 public sealed class PostgresTestDatabase : IAsyncDisposable
 {
     private const string AdminConnectionVariable = "POSTGRES_TEST_ADMIN_CONNECTION_STRING";
@@ -162,16 +177,18 @@ public sealed class PostgresTestDatabase : IAsyncDisposable
         }
     }
 
-    private static NpgsqlConnectionStringBuilder SecureBuilder(string connectionString)
+    internal static NpgsqlConnectionStringBuilder SecureBuilder(string connectionString)
     {
-        var builder = new NpgsqlConnectionStringBuilder(connectionString)
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        if (builder.SslMode is SslMode.Disable or SslMode.Allow or SslMode.Prefer)
         {
-            SslMode = SslMode.Require,
-            ChannelBinding = ChannelBinding.Require,
-            IncludeErrorDetail = false,
-            LogParameters = false,
-            PersistSecurityInfo = false
-        };
+            builder.SslMode = SslMode.Require;
+        }
+
+        builder.ChannelBinding = ChannelBinding.Require;
+        builder.IncludeErrorDetail = false;
+        builder.LogParameters = false;
+        builder.PersistSecurityInfo = false;
 
         return builder;
     }
