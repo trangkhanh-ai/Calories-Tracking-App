@@ -121,20 +121,15 @@ public sealed class DiaryService : IDiaryService
 
         decimal calories = food.CaloriesPer100g * request.Quantity / 100m;
 
-        dailyLog.MealItems.Add(new MealItem
+        var mealItem = new MealItem
         {
             FoodId = food.Id,
             Quantity = request.Quantity,
             TotalCalories = calories,
             MealType = request.MealType
-        });
+        };
 
-        dailyLog.TotalCaloriesConsumed += calories;
-
-        // Single commit for the MealItem and the running total. If it throws,
-        // the surrounding transaction rolls back the Food and DailyLog inserts
-        // too, so no orphan MealItem and no partially-created Food remain.
-        await _dailyLogRepository.SaveChangesAsync(cancellationToken);
+        await _dailyLogRepository.AddMealAndIncrementCaloriesAsync(dailyLog, mealItem, cancellationToken);
     }
 
     private async Task<Food> ResolveFoodAsync(LogMealRequest request, CancellationToken cancellationToken)

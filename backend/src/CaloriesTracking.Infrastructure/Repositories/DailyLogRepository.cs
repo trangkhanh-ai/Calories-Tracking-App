@@ -1,4 +1,5 @@
 using CaloriesTracking.Application.Abstractions;
+using CaloriesTracking.Application.Exceptions;
 using CaloriesTracking.Domain.Entities;
 using CaloriesTracking.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,30 @@ public sealed class DailyLogRepository : IDailyLogRepository
     public void ClearChangeTracker()
     {
         _dbContext.ChangeTracker.Clear();
+    }
+
+    public async Task AddMealAndIncrementCaloriesAsync(
+        DailyLog dailyLog,
+        MealItem mealItem,
+        CancellationToken cancellationToken = default)
+    {
+        dailyLog.MealItems.Add(mealItem);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var updatedRows = await _dbContext.DailyLogs
+            .Where(log => log.Id == dailyLog.Id)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    log => log.TotalCaloriesConsumed,
+                    log => log.TotalCaloriesConsumed + mealItem.TotalCalories),
+                cancellationToken);
+
+        if (updatedRows != 1)
+        {
+            throw new DataIntegrityAppException("The daily log total could not be updated.");
+        }
+
+        await _dbContext.Entry(dailyLog).ReloadAsync(cancellationToken);
     }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

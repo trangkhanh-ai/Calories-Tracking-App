@@ -480,6 +480,7 @@ public sealed class PostgresRuntimeTests
         public void Add(DailyLog dailyLog) => inner.Add(dailyLog);
         public void Detach(DailyLog dailyLog) => inner.Detach(dailyLog);
         public void ClearChangeTracker() => inner.ClearChangeTracker();
+        public Task AddMealAndIncrementCaloriesAsync(DailyLog dailyLog, MealItem mealItem, CancellationToken cancellationToken = default) => inner.AddMealAndIncrementCaloriesAsync(dailyLog, mealItem, cancellationToken);
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => inner.SaveChangesAsync(cancellationToken);
         public Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default) => inner.ExecuteInTransactionAsync(action, cancellationToken);
     }

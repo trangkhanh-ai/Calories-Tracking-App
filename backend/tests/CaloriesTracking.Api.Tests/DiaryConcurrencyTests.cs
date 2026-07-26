@@ -50,6 +50,55 @@ public sealed class DiaryConcurrencyTests
     }
 
     [Fact]
+    public async Task AddMeal_WhenTwoContextsTrackedAnExistingDailyLog_PreservesBothCaloriesAndMeals()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        var userId = await SeedUserAsync(database);
+        int foodId;
+
+        await using (var setup = database.CreateContext())
+        {
+            var food = new Food
+            {
+                Name = "Existing food",
+                NormalizedName = "EXISTING FOOD",
+                CaloriesPer100g = 100m
+            };
+            setup.Foods.Add(food);
+            setup.DailyLogs.Add(new DailyLog
+            {
+                UserId = userId,
+                Date = DateOnly.FromDateTime(MealDate),
+                TotalCaloriesConsumed = 50m
+            });
+            await setup.SaveChangesAsync();
+            foodId = food.Id;
+        }
+
+        await using var contextA = database.CreateContext();
+        await using var contextB = database.CreateContext();
+        var repositoryA = new DailyLogRepository(contextA);
+        var repositoryB = new DailyLogRepository(contextB);
+        var dailyLogA = await repositoryA.GetDailyLogAsync(userId, MealDate);
+        var dailyLogB = await repositoryB.GetDailyLogAsync(userId, MealDate);
+
+        await repositoryA.ExecuteInTransactionAsync(
+            () => repositoryA.AddMealAndIncrementCaloriesAsync(dailyLogA!, Meal(foodId, "Breakfast")));
+        await repositoryB.ExecuteInTransactionAsync(
+            () => repositoryB.AddMealAndIncrementCaloriesAsync(dailyLogB!, Meal(foodId, "Dinner")));
+
+        Assert.Equal(250m, dailyLogB!.TotalCaloriesConsumed);
+        await repositoryB.SaveChangesAsync();
+
+        await using var verify = database.CreateContext();
+        var dailyLog = await verify.DailyLogs
+            .Include(log => log.MealItems)
+            .SingleAsync(log => log.UserId == userId && log.Date == DateOnly.FromDateTime(MealDate));
+        Assert.Equal(2, dailyLog.MealItems.Count);
+        Assert.Equal(250m, dailyLog.TotalCaloriesConsumed);
+    }
+
+    [Fact]
     public async Task LogMeal_WhenTwoRequestsRaceForTheSameCustomFood_CreatesOneFoodRow()
     {
         await using var database = await SqliteTestDatabase.CreateAsync();
@@ -211,6 +260,14 @@ public sealed class DiaryConcurrencyTests
         Quantity: 100m,
         MealType: mealType,
         Date: MealDate);
+
+    private static MealItem Meal(int foodId, string mealType) => new()
+    {
+        FoodId = foodId,
+        Quantity = 100m,
+        TotalCalories = 100m,
+        MealType = mealType
+    };
 
     private static DiaryService CreateService(ApplicationDbContext context) => new(
         new DailyLogRepository(context),
