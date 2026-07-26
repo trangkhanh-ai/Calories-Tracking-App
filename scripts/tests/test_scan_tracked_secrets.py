@@ -99,11 +99,13 @@ class ScannerTests(unittest.TestCase):
             "\n".join(
                 (
                     "JWT__KEY=<generated-at-runtime>",
-                    "GEMINI__APIKEY=${GEMINI_API_KEY}",
-                    "Password=$(read-secret postgres-password)",
-                    "Password=placeholder",
+                    "GEMINI__APIKEY=${gemini_api_key}",
+                    "Password=${db_password}",
                     "postgresql://${PGUSER}:${PGPASSWORD}@postgres/calories",
                     "Jwt:Key=${{ secrets.JWT_KEY }}",
+                    "GEMINI__APIKEY=${{ env.GEMINI_API_KEY }}",
+                    "Password=${{ vars.POSTGRES_PASSWORD }}",
+                    "Password=redacted",
                     "",
                 )
             ),
@@ -130,6 +132,16 @@ class ScannerTests(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("JWT_KEY production.env:1 [REDACTED]", result.stdout)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_literal_prefix_with_shell_suffix_is_not_a_placeholder(self) -> None:
+        secret = "Password=literal-secret-prefix${SAFE_SUFFIX}"  # secret-scan: test-fixture
+        self.track("production.env", f"{secret}\n")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("PASSWORD production.env:1 [REDACTED]", result.stdout)
         self.assertNotIn(secret, result.stdout)
 
     def test_ignores_source_property_assignments_and_pattern_declarations(self) -> None:

@@ -23,11 +23,30 @@ POSTGRES_URI = re.compile(
     r"postgres(?:ql)?://(?P<username>[^\s/:@]+):(?P<password>[^\s/@]+)@",
     re.IGNORECASE,
 )
-JWT_KEY = re.compile(r"(?i)(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>[^\s\"'#]+)")
-GEMINI_API_KEY = re.compile(
-    r"(?i)(?:Gemini:ApiKey|GEMINI__APIKEY)[\"']?\s*[:=]\s*[\"']?(?P<value>[^\s\"'#]+)"
+PLACEHOLDER_VALUE = (
+    r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
+    r"|[^\s\"'#]+"
 )
-PASSWORD = re.compile(r"(?i)\bPassword=\s*[\"']?(?P<value>[^\s;\"'#]+)")
+PASSWORD_VALUE = (
+    r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
+    r"|[^\s;\"'#]+"
+)
+JWT_KEY = re.compile(
+    rf"(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+GEMINI_API_KEY = re.compile(
+    rf"(?:Gemini:ApiKey|GEMINI__APIKEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+PASSWORD = re.compile(
+    rf"\bPassword=\s*[\"']?(?P<value>{PASSWORD_VALUE})",
+    re.IGNORECASE,
+)
+EXPLICIT_PLACEHOLDER = re.compile(
+    r"(?:<[^<>\r\n]+>|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}|\.\.\.|redacted)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -80,13 +99,7 @@ def is_placeholder(value: str) -> bool:
     candidate = value.strip().strip("\"'").rstrip(",")
     if not candidate:
         return True
-    if candidate.startswith("<") and candidate.endswith(">"):
-        return True
-    if "${" in candidate or "$(" in candidate:
-        return True
-    if candidate.startswith("{{") and candidate.endswith("}}"):
-        return True
-    return candidate.lower() in {"...", "redacted", "changeme", "replace-me", "placeholder"}
+    return EXPLICIT_PLACEHOLDER.fullmatch(candidate) is not None
 
 
 def is_test_fixture_path(path: str) -> bool:
