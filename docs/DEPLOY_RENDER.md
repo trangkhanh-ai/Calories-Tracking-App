@@ -1,5 +1,73 @@
 # Deploy Flutter Web trên Vercel, .NET trên Render và PostgreSQL trên Neon
 
+## PR14 Render Operator Checklist
+
+Use this checklist for the controlled release; the longer sections below remain
+the general platform guide.
+
+### Before applying the Blueprint
+
+- Deploy the reviewed commit only. Confirm `render.yaml` defines one Docker web
+  service, readiness path `/health`, `SEEDING__ENABLED=true`, and no Render
+  database resource.
+- Create a new, dedicated, empty Neon database. Existing schemas, legacy data,
+  or shared databases are outside the verified PR14 deployment path.
+- Rotate the historically exposed Gemini key and generate a new random JWT key
+  of at least 32 characters.
+- Confirm all dashboard-managed entries remain `sync: false`:
+  `ConnectionStrings__DefaultConnection`, `JWT__KEY`, `GEMINI__APIKEY`, and
+  `CORS__ALLOWEDORIGINS__0`.
+- `sync: false` prompts only during initial Blueprint creation. On an existing
+  service, inspect and update these values directly in the Render Dashboard;
+  applying a Blueprint update does not prompt for them again.
+
+### Required values
+
+```text
+ASPNETCORE_ENVIRONMENT=Production
+HOSTING__BEHINDTLSTERMINATINGPROXY=true
+SEEDING__ENABLED=true
+ConnectionStrings__DefaultConnection=postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require&channel_binding=require
+JWT__KEY=<RANDOM_SECRET_AT_LEAST_32_CHARACTERS>
+GEMINI__APIKEY=<NEWLY_ROTATED_GEMINI_KEY>
+CORS__ALLOWEDORIGINS__0=https://<project>.vercel.app
+```
+
+Render terminates public TLS and forwards requests to the HTTP container. Proxy
+mode is an explicit security boundary: forwarded headers are trusted only for
+the immediate Render hop with `ForwardLimit=1`. The middleware resolves client
+IP before rate limiting, so do not enable proxy mode on a directly exposed
+container or behind an unreviewed chain that could spoof forwarded IPs.
+
+### Startup evidence
+
+Inspect Render logs and record sanitized evidence that:
+
+1. PostgreSQL migrations complete successfully.
+2. The first USDA import reports `USDA seed completed` with a plausible count.
+3. A restart reports `already completed` instead of importing from row one.
+4. No connection string, JWT, Gemini key, SQL parameter, or image content is
+   printed.
+
+`/health/live` is liveness and must return HTTP 200 with `{"status":"ok"}`
+without querying Neon. `/health` is database readiness and must return the same
+body with HTTP 200 only when Neon is reachable; Render monitors `/health`.
+
+### Rollback and release decision
+
+- Roll back Render to the last known-good immutable commit/image.
+- Keep Neon intact and never apply an automatic down-migration.
+- Verify schema compatibility before the old application receives traffic. If
+  uncertain, restore or branch from the recorded Neon recovery point into a
+  separate database and validate it first.
+- Repeat both health checks plus authentication, seeded search, and a database
+  write/read check after rollback.
+
+The CI smoke environment does not equal Render/Neon/Vercel staging. It cannot
+prove provider TLS termination, cold start behavior, production CORS, DNS, or
+dashboard configuration. Without authorized staging access, record these items
+as `NOT RUN` and require human approval before production deployment.
+
 Tài liệu này mô tả nền tảng production của Calories Tracking App:
 
 - Flutter Web trên Vercel.
