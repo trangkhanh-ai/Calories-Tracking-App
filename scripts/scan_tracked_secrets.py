@@ -75,7 +75,7 @@ SECTION_HEADER = re.compile(
     re.IGNORECASE,
 )
 SECTION_OBJECT_START = re.compile(
-    r"^(?P<indent>\s*)(?P<outer>\{\s*)?[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*\{",
+    r"[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*\{",
     re.IGNORECASE,
 )
 EXPLICIT_PLACEHOLDER = re.compile(
@@ -194,6 +194,56 @@ def structural_brace_counts(line: str) -> tuple[int, int]:
             closing += 1
         index += 1
     return opening, closing
+
+
+def find_section_object_start(line: str, brace_depth: int) -> tuple[str, int] | None:
+    """Find the last unquoted Jwt/Gemini object start and its absolute depth."""
+    quote: str | None = None
+    escaped = False
+    current_depth = brace_depth
+    section_start: tuple[str, int] | None = None
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            index += 1
+            continue
+
+        if character == "#" or line.startswith("//", index):
+            break
+        if line.startswith("${{", index):
+            placeholder_end = line.find("}}", index + 3)
+            if placeholder_end != -1:
+                index = placeholder_end + 2
+                continue
+        if line.startswith("${", index):
+            placeholder_end = line.find("}", index + 2)
+            if placeholder_end != -1:
+                index = placeholder_end + 1
+                continue
+
+        property_boundary = index == 0 or line[index - 1] in "{[, \t"
+        object_match = SECTION_OBJECT_START.match(line, index) if property_boundary else None
+        if object_match:
+            current_depth += 1
+            section_start = (object_match.group("section").lower(), current_depth)
+            index = object_match.end()
+            continue
+
+        if character in "\"'":
+            quote = character
+        elif character == "{":
+            current_depth += 1
+        elif character == "}":
+            current_depth = max(0, current_depth - 1)
+        index += 1
+    return section_start
 
 
 def scan_line(
@@ -319,21 +369,24 @@ def scan(repo: Path) -> list[Finding]:
                     direct_child_indent = None
                     awaiting_open_brace = False
 
-            section_match = SECTION_HEADER.match(line) or SECTION_OBJECT_START.match(line)
-            if section_match:
-                nested_section = section_match.group("section").lower()
-                section_indent = len(section_match.group("indent"))
+            header_match = SECTION_HEADER.match(line)
+            object_start = find_section_object_start(line, brace_depth)
+            section_started = header_match is not None or object_start is not None
+            if object_start:
+                nested_section, section_brace_depth = object_start
+                section_indent = indentation
                 direct_child_indent = None
-                if opening_braces:
-                    section_brace_depth = brace_depth + (2 if section_match.groupdict().get("outer") else 1)
-                    awaiting_open_brace = False
-                else:
-                    section_brace_depth = None
-                    awaiting_open_brace = True
+                awaiting_open_brace = False
+            elif header_match:
+                nested_section = header_match.group("section").lower()
+                section_indent = len(header_match.group("indent"))
+                direct_child_indent = None
+                section_brace_depth = None
+                awaiting_open_brace = True
 
             is_section_content = (
                 nested_section
-                and not section_match
+                and not section_started
                 and not is_comment_or_blank
                 and indentation > section_indent
                 and stripped not in {"{", "}", "},"}
