@@ -2,24 +2,31 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+String shellQuote(String value) => "'${value.replaceAll("'", "'\\\"'\\\"'")}'";
+
 /// Exercises the BACKEND_BASE_URL guard in scripts/vercel-build.sh directly.
 ///
 /// The script is sourced with its `main` suppressed, so only the validation
 /// function runs — no Flutter SDK is downloaded and no build is attempted.
 Future<ProcessResult> validate(String? url) {
-  final script = File('scripts/vercel-build.sh').absolute.path.replaceAll(r'\', '/');
+  final backendUrlSetup = url == null
+      ? 'unset BACKEND_BASE_URL'
+      : 'export BACKEND_BASE_URL=${shellQuote(url)}';
 
-  // Strip the trailing `main "$@"` so sourcing the file only defines functions.
+  // Pass the path as a quoted positional argument so spaces in the Windows
+  // workspace path cannot be split by Bash.
   final harness = '''
 set -uo pipefail
-eval "\$(sed 's|^main "\\\$@"\$||' "$script")"
+$backendUrlSetup
+set -- 'scripts/vercel-build.sh'
+script_path="\\\$1"
+eval "\\\$(tr -d '\\r' < "\\\$script_path" | sed 's|^main "\\\$@"\$||')"
 validate_backend_base_url
 ''';
 
   return Process.run(
     'bash',
     ['-c', harness],
-    environment: url == null ? null : {'BACKEND_BASE_URL': url},
     includeParentEnvironment: true,
   );
 }
