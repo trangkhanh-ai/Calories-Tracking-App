@@ -24,21 +24,27 @@ public static class MigrationPreflight
             return;
         }
 
-        var duplicateFdcIds = await dbContext.Foods
+        var duplicateFdcIdGroups = dbContext.Foods
             .Where(food => food.FdcId != null)
             .GroupBy(food => food.FdcId)
-            .Where(group => group.Count() > 1)
+            .Where(group => group.Count() > 1);
+
+        var duplicateFdcIdCount = await duplicateFdcIdGroups.CountAsync(cancellationToken);
+        if (duplicateFdcIdCount == 0)
+        {
+            return;
+        }
+
+        var duplicateFdcIds = await duplicateFdcIdGroups
             .Select(group => group.Key!.Value)
+            .OrderBy(fdcId => fdcId)
             .Take(10)
             .ToListAsync(cancellationToken);
 
-        if (duplicateFdcIds.Count > 0)
-        {
-            throw new DataIntegrityAppException(
-                "Duplicate non-null FdcId values exist in the Foods table and must be " +
-                "resolved manually before the unique index can be applied. Affected FdcId " +
-                "values (first 10): " + string.Join(", ", duplicateFdcIds) + ".");
-        }
+        throw new DataIntegrityAppException(
+            $"{duplicateFdcIdCount} duplicate non-null FdcId value(s) exist in the Foods " +
+            "table and must be resolved manually before the unique index can be applied. " +
+            "Affected FdcId values (first 10): " + string.Join(", ", duplicateFdcIds) + ".");
     }
 
     public static async Task EnsureNoCaseInsensitiveUserConflictsAsync(

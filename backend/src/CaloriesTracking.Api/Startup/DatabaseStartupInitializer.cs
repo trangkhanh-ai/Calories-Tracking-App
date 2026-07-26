@@ -1,6 +1,7 @@
 using CaloriesTracking.Infrastructure.Data;
 using CaloriesTracking.Infrastructure.Data.Seeders;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration.Json;
 
 namespace CaloriesTracking.Api.Startup;
 
@@ -10,6 +11,7 @@ public sealed class DatabaseStartupInitializer
     private readonly UsdaFoodSeeder _seeder;
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
+    private readonly ISeedDataPathResolver _seedDataPathResolver;
     private readonly ILogger<DatabaseStartupInitializer> _logger;
 
     public DatabaseStartupInitializer(
@@ -17,12 +19,14 @@ public sealed class DatabaseStartupInitializer
         UsdaFoodSeeder seeder,
         IConfiguration configuration,
         IHostEnvironment environment,
+        ISeedDataPathResolver seedDataPathResolver,
         ILogger<DatabaseStartupInitializer> logger)
     {
         _dbContext = dbContext;
         _seeder = seeder;
         _configuration = configuration;
         _environment = environment;
+        _seedDataPathResolver = seedDataPathResolver;
         _logger = logger;
     }
 
@@ -50,28 +54,22 @@ public sealed class DatabaseStartupInitializer
             return;
         }
 
-        var outcome = await _seeder.SeedAsync(
-            seedDataFolderPath ?? ResolveSeedDataFolder(),
+        await _seeder.SeedAsync(
+            seedDataFolderPath ?? _seedDataPathResolver.Resolve(_environment),
             cancellationToken);
-
-        if (outcome == SeedOutcome.SkippedMissingSource)
-        {
-            throw new InvalidOperationException(
-                "USDA seed source is unavailable while startup seeding is enabled.");
-        }
     }
 
     private bool GetSeedingEnabled()
     {
         var configuredValue = _configuration["Seeding:Enabled"];
+        if (_environment.IsProduction() && !HasExplicitProductionSetting())
+        {
+            throw new InvalidOperationException(
+                "Seeding:Enabled must be explicitly configured in Production.");
+        }
+
         if (string.IsNullOrWhiteSpace(configuredValue))
         {
-            if (_environment.IsProduction())
-            {
-                throw new InvalidOperationException(
-                    "Seeding:Enabled must be explicitly configured in Production.");
-            }
-
             return false;
         }
 
@@ -83,19 +81,68 @@ public sealed class DatabaseStartupInitializer
         return enabled;
     }
 
-    private string ResolveSeedDataFolder()
+    private bool HasExplicitProductionSetting()
     {
-        var publishedSeedFolder = Path.Combine(AppContext.BaseDirectory, "SeedData");
-        if (Directory.Exists(publishedSeedFolder))
+        if (_configuration is not IConfigurationRoot configurationRoot)
+        {
+            return false;
+        }
+
+        foreach (var provider in configurationRoot.Providers.Reverse())
+        {
+            if (!provider.TryGet("Seeding:Enabled", out _))
+            {
+                continue;
+            }
+
+            // appsettings.json supplies the safe false default. Production must
+            // choose through a higher-priority deployment-specific provider.
+            return provider is not JsonConfigurationProvider jsonProvider ||
+                   !string.Equals(
+                       Path.GetFileName(jsonProvider.Source.Path),
+                       "appsettings.json",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+}
+
+public interface ISeedDataPathResolver
+{
+    string Resolve(IHostEnvironment environment);
+}
+
+public sealed class SeedDataPathResolver : ISeedDataPathResolver
+{
+    private readonly string _applicationBaseDirectory;
+
+    public SeedDataPathResolver()
+        : this(AppContext.BaseDirectory)
+    {
+    }
+
+    public SeedDataPathResolver(string applicationBaseDirectory)
+    {
+        _applicationBaseDirectory = applicationBaseDirectory;
+    }
+
+    public string Resolve(IHostEnvironment environment)
+    {
+        var publishedSeedFolder = Path.Combine(_applicationBaseDirectory, "SeedData");
+        // Source-tree fallback is a local-development convenience only. A
+        // production image with a missing copied dataset must warn, not escape
+        // the published application directory.
+        if (Directory.Exists(publishedSeedFolder) || !environment.IsDevelopment())
         {
             return publishedSeedFolder;
         }
 
-        return Path.Combine(
-            _environment.ContentRootPath,
+        return Path.GetFullPath(Path.Combine(
+            environment.ContentRootPath,
             "..",
             "CaloriesTracking.Infrastructure",
             "Data",
-            "SeedData");
+            "SeedData"));
     }
 }

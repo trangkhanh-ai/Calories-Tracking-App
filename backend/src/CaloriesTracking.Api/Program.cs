@@ -165,6 +165,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+builder.Services.AddSingleton<ISeedDataPathResolver, SeedDataPathResolver>();
 builder.Services.AddScoped<DatabaseStartupInitializer>();
 
 var app = builder.Build();

@@ -14,6 +14,9 @@ namespace CaloriesTracking.Api.Tests;
 
 public sealed class DatabaseStartupInitializerTests : IDisposable
 {
+    private readonly string _resolverRoot = Path.Combine(
+        Path.GetTempPath(),
+        $"startup-resolver-{Guid.NewGuid():N}");
     private readonly string _seedFolder = Path.Combine(
         Path.GetTempPath(),
         $"startup-seed-{Guid.NewGuid():N}");
@@ -21,6 +24,7 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
     public DatabaseStartupInitializerTests()
     {
         Directory.CreateDirectory(_seedFolder);
+        Directory.CreateDirectory(_resolverRoot);
     }
 
     public void Dispose()
@@ -28,6 +32,11 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
         if (Directory.Exists(_seedFolder))
         {
             Directory.Delete(_seedFolder, recursive: true);
+        }
+
+        if (Directory.Exists(_resolverRoot))
+        {
+            Directory.Delete(_resolverRoot, recursive: true);
         }
     }
 
@@ -66,7 +75,7 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
     }
 
     [Fact]
-    public async Task Initialize_WhenEnabledSourceIsMissing_LogsSanitizedWarningAndFailsStartup()
+    public async Task Initialize_WhenEnabledSourceIsMissing_LogsSanitizedWarningAndContinuesStartup()
     {
         await using var connection = await OpenDatabaseAsync();
         await using var context = CreateContext(connection);
@@ -77,11 +86,10 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
             Environments.Development,
             logger);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => initializer.InitializeAsync(_seedFolder));
+        await initializer.InitializeAsync(_seedFolder);
 
-        Assert.Contains("USDA seed source is unavailable", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(_seedFolder, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(await context.Database.CanConnectAsync());
+        Assert.Equal(0, await context.SeedHistories.CountAsync());
         Assert.Contains(logger.Entries, entry =>
             entry.Level == LogLevel.Warning &&
             entry.Message.Contains("dataset is unavailable", StringComparison.OrdinalIgnoreCase));
@@ -123,7 +131,7 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
         await using var context = CreateContext(connection);
         var initializer = CreateInitializer(
             context,
-            BuildConfiguration(),
+            BuildBaseConfiguration(),
             Environments.Production);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -131,6 +139,108 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
 
         Assert.Contains("Seeding:Enabled", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Production", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Initialize_InProductionWithExplicitSeedingOverride_AcceptsBaseConfiguration()
+    {
+        await using var connection = await OpenDatabaseAsync();
+        await using var context = CreateContext(connection);
+        var initializer = CreateInitializer(
+            context,
+            BuildBaseConfiguration(("Seeding:Enabled", "false")),
+            Environments.Production);
+
+        await initializer.InitializeAsync(_seedFolder);
+
+        Assert.NotEmpty(await context.Database.GetAppliedMigrationsAsync());
+    }
+
+    [Fact]
+    public void SeedDataPathResolver_InDevelopment_FallsBackToSourceTree()
+    {
+        var contentRoot = Path.Combine(_resolverRoot, "CaloriesTracking.Api");
+        var sourceSeedFolder = Path.Combine(
+            _resolverRoot,
+            "CaloriesTracking.Infrastructure",
+            "Data",
+            "SeedData");
+        Directory.CreateDirectory(sourceSeedFolder);
+        var resolver = new SeedDataPathResolver(Path.Combine(_resolverRoot, "published"));
+
+        var resolved = resolver.Resolve(new TestHostEnvironment(Environments.Development)
+        {
+            ContentRootPath = contentRoot
+        });
+
+        Assert.Equal(sourceSeedFolder, resolved);
+    }
+
+    [Fact]
+    public void SeedDataPathResolver_InProduction_DoesNotFallBackToSourceTree()
+    {
+        var publishedBase = Path.Combine(_resolverRoot, "published");
+        var publishedSeedFolder = Path.Combine(publishedBase, "SeedData");
+        var sourceSeedFolder = Path.Combine(
+            _resolverRoot,
+            "CaloriesTracking.Infrastructure",
+            "Data",
+            "SeedData");
+        Directory.CreateDirectory(sourceSeedFolder);
+        var resolver = new SeedDataPathResolver(publishedBase);
+
+        var resolved = resolver.Resolve(new TestHostEnvironment(Environments.Production)
+        {
+            ContentRootPath = Path.Combine(_resolverRoot, "CaloriesTracking.Api")
+        });
+
+        Assert.Equal(publishedSeedFolder, resolved);
+    }
+
+    [Fact]
+    public async Task Initialize_InProductionWithMissingPublishedCsv_WarnsWithoutUsingSourceTree()
+    {
+        WriteCsv(rowCount: 1);
+        var contentRoot = Path.Combine(_resolverRoot, "CaloriesTracking.Api");
+        var sourceSeedFolder = Path.Combine(
+            _resolverRoot,
+            "CaloriesTracking.Infrastructure",
+            "Data",
+            "SeedData");
+        Directory.CreateDirectory(sourceSeedFolder);
+        File.Copy(
+            Path.Combine(_seedFolder, "usda_calorie_dataset.csv"),
+            Path.Combine(sourceSeedFolder, "usda_calorie_dataset.csv"));
+
+        await using var connection = await OpenDatabaseAsync();
+        await using var context = CreateContext(connection);
+        var logger = new RecordingLogger();
+        var environment = new TestHostEnvironment(Environments.Production)
+        {
+            ContentRootPath = contentRoot
+        };
+        var seeder = new UsdaFoodSeeder(
+            context,
+            new UniqueConstraintTranslator(),
+            logger,
+            TimeProvider.System,
+            batchSize: 2);
+        var initializer = new DatabaseStartupInitializer(
+            context,
+            seeder,
+            BuildBaseConfiguration(("Seeding:Enabled", "true")),
+            environment,
+            new SeedDataPathResolver(Path.Combine(_resolverRoot, "published")),
+            logger);
+
+        await initializer.InitializeAsync();
+
+        Assert.Equal(0, await context.Foods.CountAsync());
+        Assert.Contains(logger.Entries, entry =>
+            entry.Level == LogLevel.Warning &&
+            entry.Message.Contains("dataset is unavailable", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(logger.Entries, entry =>
+            entry.Message.Contains(sourceSeedFolder, StringComparison.OrdinalIgnoreCase));
     }
 
     private DatabaseStartupInitializer CreateInitializer(
@@ -153,6 +263,7 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
             seeder,
             configuration,
             new TestHostEnvironment(environmentName),
+            new SeedDataPathResolver(AppContext.BaseDirectory),
             logger);
     }
 
@@ -160,6 +271,37 @@ public sealed class DatabaseStartupInitializerTests : IDisposable
         new ConfigurationBuilder()
             .AddInMemoryCollection(values.ToDictionary(value => value.Key, value => (string?)value.Value))
             .Build();
+
+    private static IConfiguration BuildBaseConfiguration(params (string Key, string Value)[] overrides)
+    {
+        var appSettingsPath = FindAppSettingsPath();
+        return new ConfigurationBuilder()
+            .SetBasePath(Path.GetDirectoryName(appSettingsPath)!)
+            .AddJsonFile(Path.GetFileName(appSettingsPath), optional: false)
+            .AddInMemoryCollection(overrides.ToDictionary(value => value.Key, value => (string?)value.Value))
+            .Build();
+    }
+
+    private static string FindAppSettingsPath()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "backend",
+                "src",
+                "CaloriesTracking.Api",
+                "appsettings.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Could not locate the API appsettings.json test fixture.");
+    }
 
     private static async Task<SqliteConnection> OpenDatabaseAsync()
     {
