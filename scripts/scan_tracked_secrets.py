@@ -100,6 +100,15 @@ class Finding:
         return f"{self.category} {self.path}:{self.line} [REDACTED]"
 
 
+@dataclass
+class SectionState:
+    section: str
+    indent: int
+    brace_depth: int | None = None
+    direct_child_indent: int | None = None
+    awaiting_open_brace: bool = False
+
+
 def tracked_files(repo: Path) -> list[TrackedFile]:
     result = subprocess.run(
         ["git", "ls-files", "--stage", "-z"],
@@ -196,12 +205,16 @@ def structural_brace_counts(line: str) -> tuple[int, int]:
     return opening, closing
 
 
-def find_section_object_start(line: str, brace_depth: int) -> tuple[str, int] | None:
-    """Find the last unquoted Jwt/Gemini object start and its absolute depth."""
+def find_section_object_starts(
+    line: str,
+    brace_depth: int,
+) -> tuple[list[tuple[str, int]], int]:
+    """Find unquoted section objects still open at line end and minimum depth."""
     quote: str | None = None
     escaped = False
     current_depth = brace_depth
-    section_start: tuple[str, int] | None = None
+    minimum_depth = brace_depth
+    section_starts: list[tuple[str, int]] = []
     index = 0
     while index < len(line):
         character = line[index]
@@ -232,7 +245,7 @@ def find_section_object_start(line: str, brace_depth: int) -> tuple[str, int] | 
         object_match = SECTION_OBJECT_START.match(line, index) if property_boundary else None
         if object_match:
             current_depth += 1
-            section_start = (object_match.group("section").lower(), current_depth)
+            section_starts.append((object_match.group("section").lower(), current_depth))
             index = object_match.end()
             continue
 
@@ -242,16 +255,21 @@ def find_section_object_start(line: str, brace_depth: int) -> tuple[str, int] | 
             current_depth += 1
         elif character == "}":
             current_depth = max(0, current_depth - 1)
+            minimum_depth = min(minimum_depth, current_depth)
+            section_starts = [
+                section_start
+                for section_start in section_starts
+                if section_start[1] <= current_depth
+            ]
         index += 1
-    return section_start
+    return section_starts, minimum_depth
 
 
 def scan_line(
     path: str,
     line_number: int,
     line: str,
-    nested_section: str | None = None,
-    direct_child_indent: int | None = None,
+    direct_sections: set[str] | None = None,
 ) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
@@ -301,11 +319,10 @@ def scan_line(
     if has_literal_match(GEMINI_NESTED):
         add_finding("GEMINI_API_KEY")
 
-    indentation = len(line) - len(line.lstrip())
-    is_direct_child = direct_child_indent is not None and indentation == direct_child_indent
-    if nested_section == "jwt" and is_direct_child and has_literal_match(JWT_CHILD):
+    active_direct_sections = direct_sections or set()
+    if "jwt" in active_direct_sections and has_literal_match(JWT_CHILD):
         add_finding("JWT_KEY")
-    elif nested_section == "gemini" and is_direct_child and has_literal_match(GEMINI_CHILD):
+    if "gemini" in active_direct_sections and has_literal_match(GEMINI_CHILD):
         add_finding("GEMINI_API_KEY")
     return findings
 
@@ -334,11 +351,7 @@ def scan(repo: Path) -> list[Finding]:
             continue
 
         text = content.decode("utf-8", errors="replace")
-        nested_section: str | None = None
-        section_indent = -1
-        direct_child_indent: int | None = None
-        section_brace_depth: int | None = None
-        awaiting_open_brace = False
+        active_sections: list[SectionState] = []
         brace_depth = 0
         for line_number, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
@@ -346,71 +359,88 @@ def scan(repo: Path) -> list[Finding]:
             is_comment_or_blank = not stripped or stripped.startswith(("#", "//"))
             opening_braces, closing_braces = structural_brace_counts(line)
 
-            if (
-                nested_section
-                and section_brace_depth is None
-                and not awaiting_open_brace
-                and not is_comment_or_blank
-                and indentation <= section_indent
-            ):
-                nested_section = None
-                section_indent = -1
-                direct_child_indent = None
-
-            if nested_section and awaiting_open_brace and not is_comment_or_blank:
-                if opening_braces and indentation <= section_indent:
-                    section_brace_depth = brace_depth + 1
-                    awaiting_open_brace = False
-                elif indentation > section_indent:
-                    awaiting_open_brace = False
-                else:
-                    nested_section = None
-                    section_indent = -1
-                    direct_child_indent = None
-                    awaiting_open_brace = False
+            retained_sections: list[SectionState] = []
+            activated_section_ids: set[int] = set()
+            for state in active_sections:
+                if state.brace_depth is not None:
+                    retained_sections.append(state)
+                    continue
+                if state.awaiting_open_brace and not is_comment_or_blank:
+                    if opening_braces and indentation <= state.indent:
+                        state.brace_depth = brace_depth + 1
+                        state.awaiting_open_brace = False
+                        activated_section_ids.add(id(state))
+                    elif indentation > state.indent:
+                        state.awaiting_open_brace = False
+                    else:
+                        continue
+                elif (
+                    not state.awaiting_open_brace
+                    and not is_comment_or_blank
+                    and indentation <= state.indent
+                ):
+                    continue
+                retained_sections.append(state)
+            active_sections = retained_sections
 
             header_match = SECTION_HEADER.match(line)
-            object_start = find_section_object_start(line, brace_depth)
-            section_started = header_match is not None or object_start is not None
-            if object_start:
-                nested_section, section_brace_depth = object_start
-                section_indent = indentation
-                direct_child_indent = None
-                awaiting_open_brace = False
-            elif header_match:
-                nested_section = header_match.group("section").lower()
-                section_indent = len(header_match.group("indent"))
-                direct_child_indent = None
-                section_brace_depth = None
-                awaiting_open_brace = True
-
-            is_section_content = (
-                nested_section
-                and not section_started
-                and not is_comment_or_blank
-                and indentation > section_indent
-                and stripped not in {"{", "}", "},"}
+            object_starts, minimum_brace_depth = find_section_object_starts(
+                line,
+                brace_depth,
             )
-            if is_section_content and direct_child_indent is None:
-                direct_child_indent = indentation
+
+            direct_sections: set[str] = set()
+            is_section_content = (
+                not is_comment_or_blank and stripped not in {"{", "}", "},"}
+            )
+            if is_section_content:
+                for state in active_sections:
+                    if state.brace_depth is not None:
+                        if brace_depth == state.brace_depth:
+                            direct_sections.add(state.section)
+                    elif not state.awaiting_open_brace and indentation > state.indent:
+                        if state.direct_child_indent is None:
+                            state.direct_child_indent = indentation
+                        if indentation == state.direct_child_indent:
+                            direct_sections.add(state.section)
 
             findings.extend(
                 scan_line(
                     entry.path,
                     line_number,
                     line,
-                    nested_section,
-                    direct_child_indent,
+                    direct_sections,
                 )
             )
 
-            brace_depth = max(0, brace_depth + opening_braces - closing_braces)
-            if section_brace_depth is not None and brace_depth < section_brace_depth:
-                nested_section = None
-                section_indent = -1
-                direct_child_indent = None
-                section_brace_depth = None
-                awaiting_open_brace = False
+            next_brace_depth = max(0, brace_depth + opening_braces - closing_braces)
+            active_sections = [
+                state
+                for state in active_sections
+                if (
+                    (
+                        id(state) in activated_section_ids
+                        and state.brace_depth is not None
+                        and state.brace_depth <= next_brace_depth
+                    )
+                    or state.brace_depth is None
+                    or state.brace_depth <= minimum_brace_depth
+                )
+            ]
+            active_sections.extend(
+                SectionState(section=section, indent=indentation, brace_depth=depth)
+                for section, depth in object_starts
+            )
+            if header_match and not object_starts:
+                active_sections.append(
+                    SectionState(
+                        section=header_match.group("section").lower(),
+                        indent=len(header_match.group("indent")),
+                        awaiting_open_brace=True,
+                    )
+                )
+
+            brace_depth = next_brace_depth
     return findings
 
 

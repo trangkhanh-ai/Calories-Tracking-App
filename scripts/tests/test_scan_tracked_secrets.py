@@ -330,6 +330,32 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (jwt, gemini):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_tracks_multiple_open_sections_until_each_object_closes(self) -> None:
+        jwt = "multi-section-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "multi-section-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "multiple-sections.json",
+            '{"Jwt": {"Gemini": {\n'
+            f'  "ApiKey": "{gemini}"\n'
+            "},\n"
+            f'  "Key": "{jwt}"\n'
+            "}}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "GEMINI_API_KEY multiple-sections.json:2 [REDACTED]",
+                "JWT_KEY multiple-sections.json:4 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
     def test_whitespace_suffix_after_placeholder_is_detected_for_assignments_and_nested_key(self) -> None:
         password = "Password=${JWT_KEY} known-fallback"  # secret-scan: test-fixture
         jwt = "JWT__KEY=${{ secrets.JWT_KEY }} known-fallback"  # secret-scan: test-fixture
