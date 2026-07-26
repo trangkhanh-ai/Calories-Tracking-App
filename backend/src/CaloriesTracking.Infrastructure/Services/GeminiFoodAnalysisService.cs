@@ -12,7 +12,7 @@ namespace CaloriesTracking.Infrastructure.Services;
 
 /// <summary>
 /// Gọi Gemini Vision để phân tích ảnh món ăn. Thay thế proxy Node cũ
-/// (scripts/gemini_proxy.js) — logic nén ảnh và prompt được giữ nguyên.
+/// (đã xóa) — logic nén ảnh và prompt được giữ nguyên.
 /// </summary>
 public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
 {
