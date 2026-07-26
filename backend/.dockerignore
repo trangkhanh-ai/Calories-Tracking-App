@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.env.*
+**/bin
+**/obj
+**/TestResults
+tests
+*.db
+*.db-shm
+*.db-wal

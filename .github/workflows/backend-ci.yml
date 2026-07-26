@@ -4,9 +4,37 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
+  secret-scan:
+    name: Required tracked-secret scan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tracked-secret scanner dependencies
+        run: python -m pip install --requirement scripts/requirements-secret-scan.txt
+
+      - name: Test tracked-secret scanner
+        run: python scripts/tests/test_scan_tracked_secrets.py
+
+      - name: Scan tracked files
+        run: python scripts/scan_tracked_secrets.py
+
+  build-and-test:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -33,3 +61,131 @@ jobs:
           --configuration Release
           --no-build
           --verbosity normal
+
+  postgres-docker-smoke:
+    name: PostgreSQL TLS and production container smoke
+    needs:
+      - secret-scan
+      - build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI_POSTGRES_USER: calories_ci
+      CI_POSTGRES_DATABASE: calories_ci
+      CI_POSTGRES_PASSWORD: ci-only-postgres-password
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calories_ci
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          POSTGRES_DB: calories_ci
+          POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U calories_ci -d calories_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Configure ephemeral PostgreSQL TLS
+        env:
+          POSTGRES_PASSWORD: ${{ env.CI_POSTGRES_PASSWORD }}
+        run: >
+          bash scripts/ci/configure-postgres-tls.sh
+          "${{ job.services.postgres.id }}"
+          "$CI_POSTGRES_USER"
+          "$CI_POSTGRES_DATABASE"
+
+      - name: Resolve the private PostgreSQL container network
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          read -r service_network service_ip extra <<< "$(docker inspect --format '{{range $network, $config := .NetworkSettings.Networks}}{{$network}} {{$config.IPAddress}} {{end}}' "$POSTGRES_SERVICE_ID")"
+          test -n "$service_network"
+          test -n "$service_ip"
+          test -z "${extra:-}"
+          printf 'POSTGRES_DOCKER_NETWORK=%s\n' "$service_network" >> "$GITHUB_ENV"
+          printf 'POSTGRES_SERVICE_IP=%s\n' "$service_ip" >> "$GITHUB_ENV"
+
+      - name: Restore
+        run: dotnet restore backend/CaloriesTracking.slnx
+
+      - name: Build (Release)
+        run: >
+          dotnet build backend/CaloriesTracking.slnx
+          --configuration Release
+          --no-restore
+
+      - name: Run required PostgreSQL tests over TLS
+        env:
+          POSTGRES_TESTS_REQUIRED: "true"
+        run: |
+          export POSTGRES_TEST_ADMIN_CONNECTION_STRING="Host=localhost;Port=5432;Database=${CI_POSTGRES_DATABASE};Username=${CI_POSTGRES_USER};Password=${CI_POSTGRES_PASSWORD};SSL Mode=Require;Trust Server Certificate=true;Channel Binding=Require;Include Error Detail=false;Log Parameters=false;Persist Security Info=false"
+          dotnet test backend/tests/CaloriesTracking.Postgres.Tests/CaloriesTracking.Postgres.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --logger "trx;LogFileName=postgres-smoke.trx" \
+            --results-directory artifacts/postgres-tests
+
+      - name: Assert PostgreSQL tests had no skips
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = list(Path("artifacts/postgres-tests").rglob("*.trx"))
+          if not reports:
+              raise SystemExit("PostgreSQL test report was not created")
+
+          skipped = []
+          executed = 0
+          for report in reports:
+              root = ET.parse(report).getroot()
+              namespace = {"trx": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+              for result in root.findall(".//trx:UnitTestResult", namespace):
+                  executed += 1
+                  if result.attrib.get("outcome") != "Passed":
+                      skipped.append(result.attrib.get("testName", "unknown"))
+
+          if not executed:
+              raise SystemExit("PostgreSQL test report contained no executed tests")
+          if skipped:
+              raise SystemExit(f"PostgreSQL tests were skipped or not passed: {len(skipped)}")
+          print(f"Verified {executed} PostgreSQL tests with zero skips.")
+          PY
+
+      - name: Build production container image
+        run: docker build --tag calories-tracking-api:ci ./backend
+
+      - name: Inspect image and published seed data
+        run: |
+          expected_entrypoint='["sh","-c","exec dotnet CaloriesTracking.Api.dll --urls http://0.0.0.0:${PORT:-8080}"]'
+          actual_entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' calories-tracking-api:ci)"
+          test "$actual_entrypoint" = "$expected_entrypoint"
+          test "$(docker image inspect --format '{{.Config.StopSignal}}' calories-tracking-api:ci)" = "SIGTERM"
+          docker run --rm --entrypoint sh calories-tracking-api:ci -ceu \
+            'test -s /app/SeedData/usda_calorie_dataset.csv'
+
+      - name: Verify production container lifecycle
+        env:
+          POSTGRES_USER: ${{ env.CI_POSTGRES_USER }}
+          POSTGRES_DB: ${{ env.CI_POSTGRES_DATABASE }}
+          POSTGRES_PASSWORD: ${{ env.CI_POSTGRES_PASSWORD }}
+        run: >
+          bash scripts/ci/verify-container.sh
+          calories-tracking-api:ci
+          "$POSTGRES_SERVICE_IP"
+          5432

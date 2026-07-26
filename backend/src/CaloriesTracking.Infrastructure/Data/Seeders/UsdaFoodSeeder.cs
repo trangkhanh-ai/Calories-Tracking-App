@@ -58,6 +58,10 @@ public sealed class UsdaFoodSeeder
     /// </summary>
     internal Action<int>? AfterBatchCommitted { get; set; }
 
+    internal Action? BeforeExpiredLeaseClaim { get; set; }
+
+    internal Action<bool>? BeforeLeaseMutation { get; set; }
+
     /// <summary>
     /// Imports the USDA CSV. Safe to call on every startup: a completed seed
     /// returns immediately, and an interrupted one resumes from its checkpoint.
@@ -67,8 +71,8 @@ public sealed class UsdaFoodSeeder
         var csvFilePath = Path.Combine(seedDataFolderPath, "usda_calorie_dataset.csv");
         if (!File.Exists(csvFilePath))
         {
-            _logger.LogInformation(
-                "USDA seed skipped: dataset not found in the configured seed folder.");
+            _logger.LogWarning(
+                "USDA seed dataset is unavailable in the configured seed folder.");
             return SeedOutcome.SkippedMissingSource;
         }
 
@@ -88,14 +92,21 @@ public sealed class UsdaFoodSeeder
             return SeedOutcome.AlreadyCompleted;
         }
 
+        var lockOwner = history.LockOwner;
+        if (string.IsNullOrWhiteSpace(lockOwner))
+        {
+            throw new DataIntegrityAppException(
+                "The USDA seed lease was acquired without an owner token.");
+        }
+
         try
         {
-            await ImportAsync(history, csvFilePath, cancellationToken);
+            await ImportAsync(history, lockOwner, csvFilePath, cancellationToken);
 
             history.Status = SeedStatus.Completed;
             history.CompletedAt = _timeProvider.GetUtcNow().UtcDateTime;
             history.ErrorSummary = null;
-            await TouchAndSaveAsync(history, releaseLock: true, cancellationToken);
+            await TouchAndSaveAsync(history, lockOwner, releaseLock: true, cancellationToken);
 
             _logger.LogInformation(
                 "USDA seed completed. Rows written across all attempts: {ProcessedRows}.",
@@ -108,7 +119,12 @@ public sealed class UsdaFoodSeeder
             // Cancellation is not a failure: keep the checkpoint so the next
             // start resumes, and release the lease so it is not blocked.
             history.Status = SeedStatus.Running;
-            await TouchAndSaveAsync(history, releaseLock: true, CancellationToken.None);
+            await TouchAndSaveAsync(
+                history,
+                lockOwner,
+                releaseLock: true,
+                CancellationToken.None,
+                failIfLeaseLost: false);
 
             _logger.LogWarning(
                 "USDA seed cancelled at source row {LastRow}. Progress checkpointed for resume.",
@@ -122,18 +138,27 @@ public sealed class UsdaFoodSeeder
             // Store the exception TYPE only. Provider messages can embed
             // connection details and row payloads.
             history.ErrorSummary = $"Failed at source row {history.LastProcessedSourceRow} ({exception.GetType().Name}).";
-            await TouchAndSaveAsync(history, releaseLock: true, CancellationToken.None);
+            await TouchAndSaveAsync(
+                history,
+                lockOwner,
+                releaseLock: true,
+                CancellationToken.None,
+                failIfLeaseLost: false);
 
             _logger.LogError(
-                exception,
-                "USDA seed failed at source row {LastRow}.",
-                history.LastProcessedSourceRow);
+                "USDA seed failed at source row {LastRow}. Failure type: {FailureType}.",
+                history.LastProcessedSourceRow,
+                exception.GetType().Name);
 
             throw;
         }
     }
 
-    private async Task ImportAsync(SeedHistory history, string csvFilePath, CancellationToken cancellationToken)
+    private async Task ImportAsync(
+        SeedHistory history,
+        string lockOwner,
+        string csvFilePath,
+        CancellationToken cancellationToken)
     {
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
@@ -181,14 +206,26 @@ public sealed class UsdaFoodSeeder
 
             if (batch.Count >= _batchSize)
             {
-                await FlushBatchAsync(history, batch, batchStartRow, sourceRow, cancellationToken);
+                await FlushBatchAsync(
+                    history,
+                    lockOwner,
+                    batch,
+                    batchStartRow,
+                    sourceRow,
+                    cancellationToken);
                 batch.Clear();
             }
         }
 
         if (batch.Count > 0)
         {
-            await FlushBatchAsync(history, batch, batchStartRow, sourceRow, cancellationToken);
+            await FlushBatchAsync(
+                history,
+                lockOwner,
+                batch,
+                batchStartRow,
+                sourceRow,
+                cancellationToken);
         }
 
         history.TotalRows = sourceRow;
@@ -201,6 +238,7 @@ public sealed class UsdaFoodSeeder
     /// </summary>
     private async Task FlushBatchAsync(
         SeedHistory history,
+        string lockOwner,
         List<Food> batch,
         int batchStartRow,
         int batchEndRow,
@@ -232,7 +270,7 @@ public sealed class UsdaFoodSeeder
         // Checkpoint only after the rows above are durable, so a crash can
         // never mark progress the database did not accept.
         history.LastProcessedSourceRow = batchEndRow;
-        await TouchAndSaveAsync(history, releaseLock: false, cancellationToken);
+        await TouchAndSaveAsync(history, lockOwner, releaseLock: false, cancellationToken);
 
         AfterBatchCommitted?.Invoke(history.ProcessedRows);
     }
@@ -362,32 +400,91 @@ public sealed class UsdaFoodSeeder
             return null;
         }
 
-        history.Status = SeedStatus.Running;
-        history.LockOwner = owner;
-        history.LockExpiresAt = now.Add(LockDuration);
-        history.UpdatedAt = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        BeforeExpiredLeaseClaim?.Invoke();
 
-        return history;
+        var claimed = await _dbContext.SeedHistories
+            .Where(x =>
+                x.Name == SeedName &&
+                x.Version == SeedVersion &&
+                x.Status != SeedStatus.Completed &&
+                (!x.LockExpiresAt.HasValue || x.LockExpiresAt.Value <= now))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, SeedStatus.Running)
+                .SetProperty(x => x.LockOwner, owner)
+                .SetProperty(x => x.LockExpiresAt, now.Add(LockDuration))
+                .SetProperty(x => x.UpdatedAt, now),
+                cancellationToken);
+
+        _dbContext.ChangeTracker.Clear();
+
+        if (claimed == 0)
+        {
+            var current = await _dbContext.SeedHistories
+                .FirstAsync(x => x.Name == SeedName && x.Version == SeedVersion, cancellationToken);
+
+            if (current.Status == SeedStatus.Completed)
+            {
+                return current;
+            }
+
+            _logger.LogInformation("USDA seed skipped: another instance acquired the lease.");
+            return null;
+        }
+
+        return await _dbContext.SeedHistories
+            .SingleAsync(
+                x => x.Name == SeedName && x.Version == SeedVersion && x.LockOwner == owner,
+                cancellationToken);
     }
 
-    private async Task TouchAndSaveAsync(SeedHistory history, bool releaseLock, CancellationToken cancellationToken)
+    private async Task TouchAndSaveAsync(
+        SeedHistory history,
+        string lockOwner,
+        bool releaseLock,
+        CancellationToken cancellationToken,
+        bool failIfLeaseLost = true)
     {
+        BeforeLeaseMutation?.Invoke(releaseLock);
+
         var now = _timeProvider.GetUtcNow().UtcDateTime;
+        string? nextOwner = releaseLock ? null : lockOwner;
+        DateTime? nextExpiry = releaseLock ? null : now.Add(LockDuration);
+
+        var updated = await _dbContext.SeedHistories
+            .Where(x => x.Id == history.Id && x.LockOwner == lockOwner)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, history.Status)
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.CompletedAt, history.CompletedAt)
+                .SetProperty(x => x.ProcessedRows, history.ProcessedRows)
+                .SetProperty(x => x.TotalRows, history.TotalRows)
+                .SetProperty(x => x.LastProcessedSourceRow, history.LastProcessedSourceRow)
+                .SetProperty(x => x.ErrorSummary, history.ErrorSummary)
+                .SetProperty(x => x.LockOwner, nextOwner)
+                .SetProperty(x => x.LockExpiresAt, nextExpiry),
+                cancellationToken);
+
+        if (updated == 0)
+        {
+            _dbContext.Entry(history).State = EntityState.Detached;
+
+            if (failIfLeaseLost)
+            {
+                throw new DataIntegrityAppException(
+                    "The USDA seed lease changed ownership before progress could be saved.");
+            }
+
+            _logger.LogWarning(
+                "USDA seed lease ownership changed before release; the current owner was left unchanged.");
+            return;
+        }
+
         history.UpdatedAt = now;
-
-        if (releaseLock)
-        {
-            history.LockOwner = null;
-            history.LockExpiresAt = null;
-        }
-        else
-        {
-            // Extend the lease while work is actively progressing.
-            history.LockExpiresAt = now.Add(LockDuration);
-        }
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        history.LockOwner = nextOwner;
+        history.LockExpiresAt = nextExpiry;
+        var entry = _dbContext.Entry(history);
+        entry.OriginalValues.SetValues(entry.CurrentValues);
+        entry.State = EntityState.Unchanged;
     }
 }
 

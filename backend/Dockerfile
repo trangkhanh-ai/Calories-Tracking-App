@@ -1,5 +1,4 @@
 # Build: docker build -t calories-api ./backend
-# Run:   docker run -p 8080:8080 -e JWT__KEY=... -e GEMINI__APIKEY=... calories-api
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
@@ -19,5 +18,6 @@ COPY --from=build /app .
 
 # Render injects PORT at runtime; keep 8080 as the local Docker default.
 EXPOSE 8080
+STOPSIGNAL SIGTERM
 
 ENTRYPOINT ["sh", "-c", "exec dotnet CaloriesTracking.Api.dll --urls http://0.0.0.0:${PORT:-8080}"]

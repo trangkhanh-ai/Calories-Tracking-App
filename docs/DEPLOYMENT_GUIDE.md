@@ -1,5 +1,115 @@
 # Production Deployment & Manual Handoff Guide
 
+## PR14 Controlled Release Gate
+
+PR14 is prepared for a controlled first production deployment. CI validates the
+Release build, tracked-secret scan, PostgreSQL TLS/SCRAM path, container startup
+fail-fast cases, health endpoints, and graceful shutdown. It does not prove a
+real Render, Neon, Vercel, DNS, or browser deployment because no authorized
+staging environment is available in the repository. Record each manual check
+with the operator, UTC timestamp, deployed commit, and service URL.
+
+### Production topology and trust boundary
+
+- Public HTTPS terminates at Render. The container intentionally listens on
+  HTTP behind that proxy; Render injects `PORT` and the image binds
+  `http://0.0.0.0:${PORT:-8080}`.
+- `HOSTING__BEHINDTLSTERMINATINGPROXY=true` explicitly enables forwarded-header
+  processing. Only the immediate proxy hop is trusted and `ForwardLimit=1`.
+  Never enable this setting for a directly exposed container or an unreviewed
+  proxy chain.
+- In proxy mode the application disables its own HTTPS redirection because
+  Render enforces HTTPS at the edge. Ordinary Development uses the default
+  proxy setting `false` and does not trust `X-Forwarded-*` headers.
+- Forwarded headers run before rate limiting. The resolved client IP, rather
+  than Render's proxy IP, becomes the unauthenticated rate-limit partition key.
+  A spoofable proxy boundary would therefore undermine client-IP rate limits.
+- The API connects outbound to Neon over PostgreSQL TLS. Neon is the durable
+  store; Render container files are disposable.
+
+### Exact Render and Neon configuration
+
+Keep every Blueprint entry marked `sync: false` as dashboard-managed input; do
+not commit its value to `render.yaml`. Render prompts for these values only when
+the Blueprint resource is first created; later Blueprint updates do not prompt
+again. For an existing service, verify or update each value in the Dashboard
+before deploying.
+
+| Variable | Required production value |
+|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `HOSTING__BEHINDTLSTERMINATINGPROXY` | `true` |
+| `SEEDING__ENABLED` | `true` for the controlled first deployment |
+| `ConnectionStrings__DefaultConnection` | `postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require&channel_binding=require` |
+| `JWT__KEY` | A newly generated random secret of at least 32 characters |
+| `GEMINI__APIKEY` | A newly rotated Gemini key; never reuse the historically exposed key |
+| `CORS__ALLOWEDORIGINS__0` | Exact HTTPS Vercel origin; no path, wildcard, loopback host, or trailing slash |
+
+Render supplies `PORT`; do not add a fixed production value. The Neon URI must
+retain both `sslmode=require` and `channel_binding=require`. Never paste a real
+URI or secret into logs, screenshots, issues, or release notes.
+
+### Database gate: new and empty Neon project
+
+The first PR14 production release must target a newly created, dedicated, empty
+Neon database. Do not use a shared database, manually created schema, or a
+database containing legacy Calories Tracking rows. Confirm before deployment:
+
+1. The database is dedicated to this environment.
+2. No application tables or EF migration history exist yet.
+3. The connection role can create and alter the application schema.
+4. The URI connects with TLS and channel binding required.
+5. A recovery point or Neon branch is recorded before later upgrades operate
+   on production data.
+
+### First deployment and log inspection
+
+1. Apply the reviewed `render.yaml` at the exact release commit.
+2. Enter the four `sync: false` values in Render without echoing them to a
+   terminal or copying them into a ticket.
+3. Inspect the complete startup log before generating user traffic.
+4. Confirm EF Core migrations finish without an exception or retry loop.
+5. Confirm the first USDA import reports `USDA seed completed` with a plausible
+   row count. A restart must report `already completed`, not import from row one.
+6. Treat `dataset is unavailable`, `seed failed`, repeated migration errors, or
+   a continuously held seed lease as a failed release. Preserve sanitized logs,
+   stop rollout, and investigate before retrying.
+
+### Health and smoke checks
+
+- `GET /health/live` is process liveness only. It does not query Neon and must
+  return exactly HTTP 200 with `{"status":"ok"}` while the process serves.
+- `GET /health` is database readiness. It must return exactly HTTP 200 with
+  `{"status":"ok"}` before traffic is approved; HTTP 503 means the process is
+  alive but database-backed requests are not ready.
+- Render monitors `/health`. During diagnosis, compare both endpoints so a Neon
+  outage is not mistaken for a dead process.
+- After readiness succeeds, verify exact-origin CORS, registration/login,
+  seeded food search, diary write/read persistence, and one authorized Gemini
+  request.
+
+### Rollback procedure
+
+1. Stop promotion and record the failing deploy ID, commit, health responses,
+   and sanitized migration/seed log lines.
+2. Redeploy the last known-good immutable commit/image in Render. Do not rebuild
+   an unpinned working tree or rotate unrelated secrets during rollback.
+3. Do not delete Neon and do not run automatic down-migrations. Confirm the
+   previous application is compatible with the current schema before traffic.
+   Never insert, delete, or edit rows in `__EFMigrationsHistory` manually.
+4. If compatibility is uncertain, keep traffic stopped and restore or branch
+   from the recorded Neon recovery point into a separate database for review.
+5. Recheck both health endpoints, authentication, seeded search, and one
+   write/read flow. Document the incident and final deployed commit.
+
+### Manual staging limitation
+
+CI uses an ephemeral PostgreSQL 16 service and locally built container image.
+It cannot reproduce Render TLS termination, cold starts, real Neon network
+policy, Vercel CORS, custom domains, or provider dashboards. Without authorized
+staging access, mark those checks `NOT RUN`; do not claim they passed. Production
+deployment requires explicit human approval after manual evidence is collected.
+
 Hướng dẫn từng bước triển khai ứng dụng **Calories Tracking App** lên môi trường Production.
 
 ---
@@ -59,6 +169,8 @@ PostgreSQL (Neon)
 | Variable | Sample / Description |
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `HOSTING__BEHINDTLSTERMINATINGPROXY` | `true` on Render; establishes the reviewed one-hop proxy boundary |
+| `SEEDING__ENABLED` | `true` for the controlled first deployment |
 | `ConnectionStrings__DefaultConnection` | `postgresql://<user>:<password>@ep-xyz.neon.tech/neondb?sslmode=require&channel_binding=require` |
 | `JWT__KEY` | `<GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS>` |
 | `GEMINI__APIKEY` | Gemini API key vừa tạo ở bước 1 |
@@ -111,7 +223,7 @@ curl -i -X POST https://calories-tracking-api.onrender.com/api/auth/register \
   -d '{
     "username": "smoketest_user",
     "email": "smoke@example.com",
-    "password": "Password123!",
+    "password": "<GENERATED_UNIQUE_SMOKE_PASSWORD>",
     "displayName": "Smoke Tester"
   }'
 ```

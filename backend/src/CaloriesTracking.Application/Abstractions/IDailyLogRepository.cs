@@ -19,6 +19,11 @@ public interface IDailyLogRepository
     /// </summary>
     void ClearChangeTracker();
 
+    Task AddMealAndIncrementCaloriesAsync(
+        DailyLog dailyLog,
+        MealItem mealItem,
+        CancellationToken cancellationToken = default);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default);

@@ -1,8 +1,10 @@
 using CaloriesTracking.Api.Tests.Support;
 using CaloriesTracking.Application.Abstractions;
+using CaloriesTracking.Application.Exceptions;
 using CaloriesTracking.Domain.Entities;
 using CaloriesTracking.Infrastructure.Data;
 using CaloriesTracking.Infrastructure.Data.Seeders;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,6 +17,7 @@ namespace CaloriesTracking.Api.Tests;
 public sealed class UsdaFoodSeederTests : IDisposable
 {
     private readonly string _seedFolder;
+    private readonly List<string> _databaseFiles = [];
 
     public UsdaFoodSeederTests()
     {
@@ -27,6 +30,15 @@ public sealed class UsdaFoodSeederTests : IDisposable
         if (Directory.Exists(_seedFolder))
         {
             Directory.Delete(_seedFolder, recursive: true);
+        }
+
+        foreach (var databaseFile in _databaseFiles)
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databaseFile))
+            {
+                File.Delete(databaseFile);
+            }
         }
     }
 
@@ -227,6 +239,117 @@ public sealed class UsdaFoodSeederTests : IDisposable
     }
 
     [Fact]
+    public async Task Seed_WhenTwoInstancesRaceForAnExpiredLease_OnlyOneTakesOwnership()
+    {
+        WriteCsv(rowCount: 10);
+        var databaseFile = Path.Combine(Path.GetTempPath(), $"usda-lease-{Guid.NewGuid():N}.db");
+        _databaseFiles.Add(databaseFile);
+        var connectionString = $"Data Source={databaseFile};Default Timeout=10";
+
+        await using (var setup = CreateFileContext(connectionString))
+        {
+            await setup.Database.MigrateAsync();
+            setup.SeedHistories.Add(new SeedHistory
+            {
+                Name = UsdaFoodSeeder.SeedName,
+                Version = UsdaFoodSeeder.SeedVersion,
+                Status = SeedStatus.Running,
+                StartedAt = DateTime.UtcNow.AddHours(-2),
+                UpdatedAt = DateTime.UtcNow.AddHours(-2),
+                LockOwner = "expired-owner",
+                LockExpiresAt = DateTime.UtcNow.AddHours(-1)
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var firstContext = CreateFileContext(connectionString);
+        await using var secondContext = CreateFileContext(connectionString);
+        using var claimBarrier = new Barrier(participantCount: 2);
+        var firstSeeder = CreateSeeder(firstContext);
+        var secondSeeder = CreateSeeder(secondContext);
+        firstSeeder.BeforeExpiredLeaseClaim = () => claimBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+        secondSeeder.BeforeExpiredLeaseClaim = () => claimBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+
+        var outcomes = await Task.WhenAll(
+            Task.Run(() => firstSeeder.SeedAsync(_seedFolder)),
+            Task.Run(() => secondSeeder.SeedAsync(_seedFolder)));
+
+        Assert.Single(outcomes, outcome => outcome == SeedOutcome.Completed);
+        Assert.Single(outcomes, outcome => outcome != SeedOutcome.Completed);
+
+        await using var verify = CreateFileContext(connectionString);
+        Assert.Equal(10, await verify.Foods.CountAsync());
+        Assert.Equal(SeedStatus.Completed, (await verify.SeedHistories.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Seed_WhenLeaseOwnerChangesBeforeCheckpoint_StaleOwnerCannotMutateHistory()
+    {
+        WriteCsv(rowCount: 10);
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var seeder = CreateSeeder(context, batchSize: 5);
+        var leaseStolen = false;
+        seeder.BeforeLeaseMutation = releaseLock =>
+        {
+            if (releaseLock || leaseStolen)
+            {
+                return;
+            }
+
+            leaseStolen = true;
+            using var takeover = database.CreateContext();
+            takeover.Database.ExecuteSqlRaw(
+                "UPDATE \"SeedHistories\" SET \"LockOwner\" = 'new-owner', \"LockExpiresAt\" = {0}",
+                DateTime.UtcNow.AddMinutes(10));
+        };
+
+        var exception = await Assert.ThrowsAsync<DataIntegrityAppException>(
+            () => seeder.SeedAsync(_seedFolder));
+
+        Assert.Contains("lease", exception.Message, StringComparison.OrdinalIgnoreCase);
+        await using var verify = database.CreateContext();
+        var history = await verify.SeedHistories.SingleAsync();
+        Assert.Equal("new-owner", history.LockOwner);
+        Assert.Equal(0, history.LastProcessedSourceRow);
+        Assert.Equal(SeedStatus.Running, history.Status);
+    }
+
+    [Fact]
+    public async Task Seed_WhenLeaseOwnerChangesBeforeCancellationRelease_StaleOwnerCannotReleaseNewLease()
+    {
+        WriteCsv(rowCount: 10);
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        using var cancellation = new CancellationTokenSource();
+        var seeder = CreateSeeder(
+            context,
+            batchSize: 5,
+            onBatchCommitted: _ => cancellation.Cancel());
+        seeder.BeforeLeaseMutation = releaseLock =>
+        {
+            if (!releaseLock)
+            {
+                return;
+            }
+
+            using var takeover = database.CreateContext();
+            takeover.Database.ExecuteSqlRaw(
+                "UPDATE \"SeedHistories\" SET \"LockOwner\" = 'new-owner', \"LockExpiresAt\" = {0}",
+                DateTime.UtcNow.AddMinutes(10));
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => seeder.SeedAsync(_seedFolder, cancellation.Token));
+
+        await using var verify = database.CreateContext();
+        var history = await verify.SeedHistories.SingleAsync();
+        Assert.Equal("new-owner", history.LockOwner);
+        Assert.True(history.LastProcessedSourceRow > 0);
+        Assert.Equal(SeedStatus.Running, history.Status);
+    }
+
+    [Fact]
     public async Task Seed_WhenOneRowDuplicatesAnExistingFdcId_ImportsEveryOtherRowInTheBatch()
     {
         WriteCsv(rowCount: 20);
@@ -339,6 +462,14 @@ public sealed class UsdaFoodSeederTests : IDisposable
         {
             AfterBatchCommitted = onBatchCommitted
         };
+    }
+
+    private static ApplicationDbContext CreateFileContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+        return new ApplicationDbContext(options);
     }
 
     private void WriteCsv(int rowCount)
