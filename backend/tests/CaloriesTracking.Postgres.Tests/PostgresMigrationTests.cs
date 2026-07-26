@@ -14,20 +14,18 @@ public sealed class PostgresMigrationTests
 
         await context.Database.MigrateAsync();
 
-        var ssl = await database.GetSslStatusAsync();
-        if (ssl.HasValue)
-        {
-            Assert.True(ssl.Value);
-        }
+        Assert.True(await database.IsSslEnabledAsync());
 
         await using var connection = await database.OpenConnectionAsync();
         var tables = await ReadSetAsync(
             connection,
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public';");
 
-        Assert.True(
-            new[] { "Users", "Foods", "DailyLogs", "MealItems", "SeedHistories" }
-                .All(tables.Contains));
+        Assert.Contains("Users", tables);
+        Assert.Contains("Foods", tables);
+        Assert.Contains("DailyLogs", tables);
+        Assert.Contains("MealItems", tables);
+        Assert.Contains("SeedHistories", tables);
 
         var columns = await ReadSetAsync(
             connection,
@@ -39,21 +37,27 @@ public sealed class PostgresMigrationTests
 
         Assert.Contains("Users.NormalizedUsername", columns);
         Assert.Contains("Users.NormalizedEmail", columns);
+        Assert.Contains("Foods.FdcId", columns);
         Assert.Contains("Foods.NormalizedName", columns);
+        Assert.Contains("SeedHistories.Name", columns);
+        Assert.Contains("SeedHistories.Version", columns);
+        Assert.Contains("SeedHistories.Status", columns);
+        Assert.Contains("DailyLogs.UserId", columns);
+        Assert.Contains("DailyLogs.Date", columns);
 
         var indexes = await ReadIndexDefinitionsAsync(connection);
-        Assert.True(IsUnique(indexes, "IX_Users_NormalizedUsername"));
-        Assert.True(IsUnique(indexes, "IX_Users_NormalizedEmail"));
-        Assert.True(IsUnique(indexes, "IX_SeedHistories_Name_Version"));
-        Assert.True(IsUnique(indexes, "IX_DailyLogs_UserId_Date"));
+        AssertUniqueIndex(indexes, "IX_Users_NormalizedUsername", "NormalizedUsername");
+        AssertUniqueIndex(indexes, "IX_Users_NormalizedEmail", "NormalizedEmail");
+        AssertUniqueIndex(indexes, "IX_SeedHistories_Name_Version", "Name", "Version");
+        AssertUniqueIndex(indexes, "IX_DailyLogs_UserId_Date", "UserId", "Date");
 
-        Assert.True(IsUnique(indexes, "IX_Foods_FdcId"));
+        AssertUniqueIndex(indexes, "IX_Foods_FdcId", "FdcId");
         Assert.Contains(
             "\"FdcId\" IS NOT NULL",
             indexes["IX_Foods_FdcId"].Predicate,
             StringComparison.OrdinalIgnoreCase);
 
-        Assert.True(IsUnique(indexes, "IX_Foods_NormalizedName_Custom"));
+        AssertUniqueIndex(indexes, "IX_Foods_NormalizedName_Custom", "NormalizedName");
         Assert.Contains(
             "\"FdcId\" IS NULL",
             indexes["IX_Foods_NormalizedName_Custom"].Predicate,
@@ -63,6 +67,11 @@ public sealed class PostgresMigrationTests
             connection,
             "SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\";");
         Assert.Contains("20260725173840_AddNormalizedIdentityAndSeedHistory", appliedMigrations);
+
+        var expectedMigrations = context.Database.GetMigrations();
+        Assert.Equal(
+            expectedMigrations.OrderBy(migration => migration, StringComparer.Ordinal),
+            appliedMigrations.OrderBy(migration => migration, StringComparer.Ordinal));
     }
 
     [PostgresFact]
@@ -258,8 +267,18 @@ public sealed class PostgresMigrationTests
         return indexes;
     }
 
-    private static bool IsUnique(IReadOnlyDictionary<string, IndexDefinition> indexes, string name) =>
-        indexes.TryGetValue(name, out var index) && index.Unique;
+    private static void AssertUniqueIndex(
+        IReadOnlyDictionary<string, IndexDefinition> indexes,
+        string name,
+        params string[] columns)
+    {
+        Assert.True(indexes.TryGetValue(name, out var index), $"Expected index {name} to exist.");
+        Assert.True(index.Unique, $"Expected index {name} to be unique.");
+        foreach (var column in columns)
+        {
+            Assert.Contains($"\"{column}\"", index.Definition, StringComparison.Ordinal);
+        }
+    }
 
     private static PostgresException? FindPostgresException(Exception exception)
     {

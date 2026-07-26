@@ -20,6 +20,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace CaloriesTracking.Postgres.Tests;
@@ -98,7 +101,8 @@ public sealed class PostgresRuntimeTests
     public async Task RegisterHttp_WhenTwoRequestsRaceForTheSameUsername_ReturnsOneSuccessAndOne409()
     {
         await using var database = await PostgresTestDatabase.CreateAsync();
-        await using var factory = new ProductionApiFactory(database.ConnectionString);
+        using var precheckBarrier = new Barrier(2);
+        await using var factory = new ProductionApiFactory(database.ConnectionString, precheckBarrier);
         using var client = factory.CreateClient();
 
         var responses = await Task.WhenAll(
@@ -451,7 +455,10 @@ public sealed class PostgresRuntimeTests
             var result = await inner.GetByNormalizedEmailAsync(normalizedEmail, cancellationToken);
             if (result is null && Interlocked.Exchange(ref _waited, 1) == 0)
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(15));
+                if (!barrier.SignalAndWait(TimeSpan.FromSeconds(15)))
+                {
+                    throw new TimeoutException("Registration precheck barrier timed out.");
+                }
             }
 
             return result;
@@ -515,7 +522,9 @@ public sealed class PostgresRuntimeTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private sealed class ProductionApiFactory(string connectionString) : WebApplicationFactory<Program>
+    private sealed class ProductionApiFactory(
+        string connectionString,
+        Barrier registrationPrecheckBarrier) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -534,6 +543,18 @@ public sealed class PostgresRuntimeTests
                     ["Seeding:Enabled"] = "false",
                     ["RateLimiting:AuthRegisterPermitLimit"] = "1000"
                 });
+            });
+
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IUserRepository>();
+                // The same barrier is shared by both request scopes. Each scope
+                // waits after its email lookup, so neither can insert until both
+                // username and email advisory checks have completed.
+                services.AddScoped<IUserRepository>(serviceProvider =>
+                    new BarrierUserRepository(
+                        new UserRepository(serviceProvider.GetRequiredService<ApplicationDbContext>()),
+                        registrationPrecheckBarrier));
             });
         }
     }

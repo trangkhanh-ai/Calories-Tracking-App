@@ -125,20 +125,15 @@ public sealed class PostgresTestDatabase : IAsyncDisposable
         }
     }
 
-    public async Task<bool?> GetSslStatusAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> IsSslEnabledAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT CASE
-                WHEN to_regclass('pg_catalog.pg_stat_ssl') IS NULL THEN NULL
-                ELSE (SELECT ssl FROM pg_catalog.pg_stat_ssl WHERE pid = pg_backend_pid())
-            END;
-            """;
+            "SELECT ssl FROM pg_catalog.pg_stat_ssl WHERE pid = pg_backend_pid();";
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        return result is null or DBNull ? null : (bool)result;
+        return result is true;
     }
 
     public async ValueTask DisposeAsync()
