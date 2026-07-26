@@ -3,6 +3,7 @@ services:
     name: calories-tracking-api
     runtime: docker
     plan: free
+    region: singapore
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /health
