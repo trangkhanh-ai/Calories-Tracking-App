@@ -26,7 +26,7 @@ public sealed class PostgresApplicationDbContextFactory
         var configuredConnectionString =
             Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         var connectionString = configuredConnectionString is null
-            ? "Host=example.invalid;Database=calories_tracking;Username=migration;Password=placeholder"
+            ? "Host=example.invalid;Database=calories_tracking;Username=migration;Password=<DESIGN_TIME_PLACEHOLDER>"
             : NeonConnectionStringNormalizer.Normalize(configuredConnectionString);
 
         var options = new DbContextOptionsBuilder<PostgresApplicationDbContext>()

@@ -181,9 +181,30 @@ class ScannerTests(unittest.TestCase):
         result = self.scan()
 
         self.assertNotEqual(0, result.returncode)
-        for category, path, value in findings:
-            self.assertIn(f"{category} {path}:1 [REDACTED]", result.stdout)
-            self.assertNotIn(value, result.stdout)
+        self.assertEqual(
+            [
+                "POSTGRES_URI_CREDENTIALS database.txt:1 [REDACTED]",
+                "GEMINI_API_KEY gemini.json:1 [REDACTED]",
+                "GOOGLE_API_KEY google.txt:1 [REDACTED]",
+                "JWT_KEY jwt.json:1 [REDACTED]",
+                "PASSWORD password.env:1 [REDACTED]",
+                "PRIVATE_KEY private.pem:1 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+
+        sensitive_tokens = (
+            "AIzaSyCurrentSecret123456789012345678901",  # secret-scan: test-fixture
+            "-----BEGIN PRIVATE KEY-----",  # secret-scan: test-fixture
+            "postgresql://app:uri-secret@db/calories",  # secret-scan: test-fixture
+            "uri-secret",
+            "jwt-current-secret-value-1234567890",
+            "gemini-current-secret-value",
+            "current-password-value",
+        )
+        for sensitive_token in sensitive_tokens:
+            self.assertNotIn(sensitive_token, result.stdout)
 
 
 if __name__ == "__main__":
