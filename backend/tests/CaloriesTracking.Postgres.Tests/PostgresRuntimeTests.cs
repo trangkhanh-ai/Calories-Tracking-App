@@ -105,6 +105,17 @@ public sealed class PostgresRuntimeTests
         await using var factory = new ProductionApiFactory(database.ConnectionString, precheckBarrier);
         using var client = factory.CreateClient();
 
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var connection = Assert.IsType<NpgsqlConnection>(context.Database.GetDbConnection());
+            var expected = new NpgsqlConnectionStringBuilder(database.ConnectionString);
+
+            Assert.IsType<PostgresApplicationDbContext>(context);
+            Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", context.Database.ProviderName);
+            Assert.Equal(expected.Database, connection.Database);
+        }
+
         var responses = await Task.WhenAll(
             client.PostAsJsonAsync(
                 "/api/auth/register",
@@ -526,21 +537,25 @@ public sealed class PostgresRuntimeTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.ConfigureAppConfiguration((_, configuration) =>
+
+            // WebApplicationFactory applies ConfigureAppConfiguration during
+            // host build, after Program's production validation and provider
+            // selection. Bootstrap settings are visible from CreateBuilder.
+            foreach (var (key, value) in new Dictionary<string, string>
             {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:DefaultConnection"] = connectionString,
-                    ["Jwt:Key"] = "runtime-integration-signing-key-with-32-plus-bytes",
-                    ["Jwt:Issuer"] = "CaloriesTracking.Postgres.Tests",
-                    ["Jwt:Audience"] = "CaloriesTracking.Postgres.Tests",
-                    ["Gemini:ApiKey"] = "runtime-integration-api-key",
-                    ["Cors:AllowedOrigins:0"] = "https://example.com",
-                    ["Hosting:BehindTlsTerminatingProxy"] = "true",
-                    ["Seeding:Enabled"] = "false",
-                    ["RateLimiting:AuthRegisterPermitLimit"] = "1000"
-                });
-            });
+                ["ConnectionStrings:DefaultConnection"] = connectionString,
+                ["Jwt:Key"] = "runtime-integration-signing-key-with-32-plus-bytes",
+                ["Jwt:Issuer"] = "CaloriesTracking.Postgres.Tests",
+                ["Jwt:Audience"] = "CaloriesTracking.Postgres.Tests",
+                ["Gemini:ApiKey"] = "runtime-integration-api-key",
+                ["Cors:AllowedOrigins:0"] = "https://example.com",
+                ["Hosting:BehindTlsTerminatingProxy"] = "true",
+                ["Seeding:Enabled"] = "false",
+                ["RateLimiting:AuthRegisterPermitLimit"] = "1000"
+            })
+            {
+                builder.UseSetting(key, value);
+            }
 
             builder.ConfigureTestServices(services =>
             {
