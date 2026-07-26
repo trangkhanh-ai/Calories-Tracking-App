@@ -440,6 +440,112 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (jwt, gemini):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_malformed_json_fails_closed_without_disclosing_values(self) -> None:
+        missing = "malformed-missing-jwt-secret-1234567890"  # secret-scan: test-fixture
+        duplicate = "malformed-comma-gemini-secret"  # secret-scan: test-fixture
+        comment_jwt = "unterminated-comment-jwt-secret-1234567890"  # secret-scan: test-fixture
+        comment_gemini = "unterminated-comment-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "malformed-missing.json",
+            "{\n"
+            '  "Jwt": {\n'
+            f'    "Key": "{missing}"\n',
+        )
+        self.track(
+            "malformed-comma.json",
+            "{\n"
+            '  "Gemini": {\n'
+            f'    "ApiKey": "{duplicate}",\n'
+            "    ,\n"
+            '    "Model": "flash"\n'
+            "  }\n"
+            "}\n",
+        )
+        self.track(
+            "malformed-comment.jsonc",
+            "{\n"
+            "  /* unterminated comment\n"
+            '  "Jwt": {\n'
+            f'    "Key": "{comment_jwt}"\n'
+            "  },\n"
+            '  "Gemini": {\n'
+            f'    "ApiKey": "{comment_gemini}"\n'
+            "  }",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "SCAN_ERROR malformed-comma.json:4 [REDACTED]",
+                "SCAN_ERROR malformed-comment.jsonc:8 [REDACTED]",
+                "SCAN_ERROR malformed-missing.json:4 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (missing, duplicate, comment_jwt, comment_gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_flow_maps_detect_only_direct_section_keys(self) -> None:
+        jwt = "yaml-flow-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "yaml-flow-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "flow.yaml",
+            f"Jwt: {{ Metadata: {{ Key: nested-jwt-value }}, Key: {jwt} }}\n"
+            f'Gemini: {{ Metadata: {{ ApiKey: nested-gemini-value }}, ApiKey: "{gemini}" }}\n',
+        )
+        self.track(
+            "nested-flow.yaml",
+            "Jwt: { Metadata: { Key: nested-only-jwt-value } }\n"
+            "Gemini: { Metadata: { ApiKey: nested-only-gemini-value } }\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY flow.yaml:1 [REDACTED]",
+                "GEMINI_API_KEY flow.yaml:2 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini, "nested-jwt-value", "nested-gemini-value"):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_multiline_yaml_flow_maps_reject_placeholder_literal_suffixes(self) -> None:
+        jwt = "${JWT_KEY} known-fallback"  # secret-scan: test-fixture
+        gemini = "${{ secrets.GEMINI_KEY }} known-fallback"  # secret-scan: test-fixture
+        self.track(
+            "multiline-flow.yaml",
+            "Jwt: {\n"
+            "  Metadata: {\n"
+            "    Key: nested-only-jwt-value\n"
+            "  },\n"
+            f"  Key: {jwt}\n"
+            "}\n"
+            "Gemini: {\n"
+            "  Metadata: { ApiKey: nested-only-gemini-value },\n"
+            f'  ApiKey: "{gemini}"\n'
+            "}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY multiline-flow.yaml:5 [REDACTED]",
+                "GEMINI_API_KEY multiline-flow.yaml:9 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn("known-fallback", result.stdout)
+
     def test_whitespace_suffix_after_placeholder_is_detected_for_assignments_and_nested_key(self) -> None:
         password = "Password=${JWT_KEY} known-fallback"  # secret-scan: test-fixture
         jwt = "JWT__KEY=${{ secrets.JWT_KEY }} known-fallback"  # secret-scan: test-fixture
@@ -512,8 +618,8 @@ class ScannerTests(unittest.TestCase):
             ("GOOGLE_API_KEY", "google.txt", "AIzaSyCurrentSecret123456789012345678901"),  # secret-scan: test-fixture
             ("PRIVATE_KEY", "private.pem", "-----BEGIN PRIVATE KEY-----"),  # secret-scan: test-fixture
             ("POSTGRES_URI_CREDENTIALS", "database.txt", "postgresql://app:uri-secret@db/calories"),  # secret-scan: test-fixture
-            ("JWT_KEY", "jwt.json", '"Jwt:Key": "jwt-current-secret-value-1234567890"'),  # secret-scan: test-fixture
-            ("GEMINI_API_KEY", "gemini.json", '"Gemini:ApiKey": "gemini-current-secret-value"'),  # secret-scan: test-fixture
+            ("JWT_KEY", "jwt.json", '{"Jwt:Key": "jwt-current-secret-value-1234567890"}'),  # secret-scan: test-fixture
+            ("GEMINI_API_KEY", "gemini.json", '{"Gemini:ApiKey": "gemini-current-secret-value"}'),  # secret-scan: test-fixture
             ("PASSWORD", "password.env", "Password=current-password-value"),  # secret-scan: test-fixture
         )
         for _, path, value in findings:

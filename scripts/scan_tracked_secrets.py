@@ -103,6 +103,13 @@ class JsonToken:
     line: int
 
 
+@dataclass(frozen=True)
+class YamlFlowToken:
+    kind: str
+    value: str
+    line: int
+
+
 @dataclass
 class YamlSectionState:
     section: str
@@ -111,7 +118,9 @@ class YamlSectionState:
 
 
 class JsonParseError(ValueError):
-    pass
+    def __init__(self, message: str, line: int) -> None:
+        super().__init__(message)
+        self.line = line
 
 
 def tracked_files(repo: Path) -> list[TrackedFile]:
@@ -205,7 +214,7 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
                     line += 1
                 index += 1
             if index >= length:
-                raise JsonParseError("unterminated block comment")
+                raise JsonParseError("unterminated block comment", line)
             index += 2
             continue
         if character in "{}[]:,":
@@ -223,7 +232,7 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
                     tokens.append(JsonToken("string", "".join(value), token_line))
                     break
                 if character in "\r\n" or ord(character) < 0x20:
-                    raise JsonParseError("invalid string character")
+                    raise JsonParseError("invalid string character", line)
                 if character != "\\":
                     value.append(character)
                     index += 1
@@ -231,11 +240,11 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
 
                 index += 1
                 if index >= length:
-                    raise JsonParseError("unterminated string escape")
+                    raise JsonParseError("unterminated string escape", line)
                 escape = text[index]
                 if escape != "u":
                     if escape not in escape_values:
-                        raise JsonParseError("invalid string escape")
+                        raise JsonParseError("invalid string escape", line)
                     value.append(escape_values[escape])
                     index += 1
                     continue
@@ -244,7 +253,7 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
                 if len(hexadecimal) != 4 or not all(
                     digit in "0123456789abcdefABCDEF" for digit in hexadecimal
                 ):
-                    raise JsonParseError("invalid unicode escape")
+                    raise JsonParseError("invalid unicode escape", line)
                 codepoint = int(hexadecimal, 16)
                 index += 5
                 if 0xD800 <= codepoint <= 0xDBFF and text.startswith("\\u", index):
@@ -262,7 +271,7 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
                             index += 6
                 value.append(chr(codepoint))
             else:
-                raise JsonParseError("unterminated string")
+                raise JsonParseError("unterminated string", line)
             continue
 
         token_line = line
@@ -275,7 +284,7 @@ def tokenize_jsonc(text: str) -> list[JsonToken]:
                 break
             index += 1
         if start == index:
-            raise JsonParseError("unexpected character")
+            raise JsonParseError("unexpected character", line)
         tokens.append(JsonToken("scalar", text[start:index], token_line))
 
     tokens.append(JsonToken("eof", "", line))
@@ -313,7 +322,7 @@ class JsonSecretParser:
     def _expect(self, kind: str) -> JsonToken:
         token = self._advance()
         if token.kind != kind:
-            raise JsonParseError(f"expected {kind}")
+            raise JsonParseError(f"expected {kind}", token.line)
         return token
 
     def _parse_value(self, section: str | None) -> None:
@@ -325,7 +334,7 @@ class JsonSecretParser:
         elif token.kind in {"string", "scalar"}:
             self._advance()
         else:
-            raise JsonParseError("expected value")
+            raise JsonParseError("expected value", token.line)
 
     def _parse_object(self, section: str | None) -> None:
         self._expect("{")
@@ -379,11 +388,242 @@ class JsonSecretParser:
             self.seen_findings.add(finding_key)
 
 
-def scan_json_secrets(path: str, text: str) -> list[Finding] | None:
+def scan_json_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
     try:
-        return JsonSecretParser(path, text).parse()
-    except (JsonParseError, RecursionError):
-        return None
+        return JsonSecretParser(path, text).parse(), None
+    except JsonParseError as error:
+        return [], error.line
+    except RecursionError:
+        return [], 0
+
+
+def tokenize_yaml_flow(text: str) -> list[YamlFlowToken]:
+    tokens: list[YamlFlowToken] = []
+    index = 0
+    line = 1
+    length = len(text)
+    escape_values = {
+        '"': '"',
+        "\\": "\\",
+        "/": "/",
+        "b": "\b",
+        "f": "\f",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+    }
+
+    while index < length:
+        character = text[index]
+        if character.isspace():
+            if character == "\n":
+                line += 1
+            index += 1
+            continue
+        if character == "#":
+            while index < length and text[index] not in "\r\n":
+                index += 1
+            continue
+        if text.startswith("${{", index):
+            placeholder_end = text.find("}}", index + 3)
+            if placeholder_end != -1:
+                tokens.append(
+                    YamlFlowToken("scalar", text[index : placeholder_end + 2], line)
+                )
+                index = placeholder_end + 2
+                continue
+        if text.startswith("${", index):
+            placeholder_end = text.find("}", index + 2)
+            if placeholder_end != -1:
+                tokens.append(
+                    YamlFlowToken("scalar", text[index : placeholder_end + 1], line)
+                )
+                index = placeholder_end + 1
+                continue
+        if character in "{}[]:,":
+            tokens.append(YamlFlowToken(character, character, line))
+            index += 1
+            continue
+        if character == "'":
+            token_line = line
+            index += 1
+            value: list[str] = []
+            while index < length:
+                character = text[index]
+                if character == "'":
+                    if index + 1 < length and text[index + 1] == "'":
+                        value.append("'")
+                        index += 2
+                        continue
+                    index += 1
+                    tokens.append(YamlFlowToken("scalar", "".join(value), token_line))
+                    break
+                if character == "\n":
+                    line += 1
+                value.append(character)
+                index += 1
+            else:
+                tokens.append(YamlFlowToken("eof", "", line))
+                return tokens
+            continue
+        if character == '"':
+            token_line = line
+            index += 1
+            value = []
+            while index < length:
+                character = text[index]
+                if character == '"':
+                    index += 1
+                    tokens.append(YamlFlowToken("scalar", "".join(value), token_line))
+                    break
+                if character == "\n":
+                    line += 1
+                if character != "\\":
+                    value.append(character)
+                    index += 1
+                    continue
+                index += 1
+                if index >= length:
+                    tokens.append(YamlFlowToken("eof", "", line))
+                    return tokens
+                escape = text[index]
+                value.append(escape_values.get(escape, escape))
+                index += 1
+            else:
+                tokens.append(YamlFlowToken("eof", "", line))
+                return tokens
+            continue
+
+        token_line = line
+        start = index
+        while index < length:
+            character = text[index]
+            if character.isspace() or character in "{}[]:,":
+                break
+            index += 1
+        tokens.append(YamlFlowToken("scalar", text[start:index], token_line))
+
+    tokens.append(YamlFlowToken("eof", "", line))
+    return tokens
+
+
+class YamlFlowSecretParser:
+    def __init__(self, path: str, text: str) -> None:
+        self.path = path
+        self.lines = text.splitlines()
+        self.tokens = tokenize_yaml_flow(text)
+        self.findings: list[Finding] = []
+        self.seen_findings: set[tuple[str, int]] = set()
+
+    def parse(self) -> list[Finding]:
+        for index in range(len(self.tokens) - 2):
+            token = self.tokens[index]
+            section = token.value.lower()
+            if (
+                token.kind == "scalar"
+                and section in {"jwt", "gemini"}
+                and self.tokens[index + 1].kind == ":"
+                and self.tokens[index + 2].kind == "{"
+            ):
+                try:
+                    self._parse_mapping(index + 2, section)
+                except (IndexError, ValueError):
+                    continue
+        return self.findings
+
+    def _parse_mapping(self, index: int, section: str | None) -> int:
+        index = self._expect(index, "{")
+        if self.tokens[index].kind == "}":
+            return index + 1
+
+        while True:
+            property_token = self.tokens[index]
+            if property_token.kind != "scalar":
+                raise ValueError("expected flow property")
+            index = self._expect(index + 1, ":")
+            property_name = property_token.value.lower()
+            category = None
+            if section == "jwt" and property_name == "key":
+                category = "JWT_KEY"
+            elif section == "gemini" and property_name == "apikey":
+                category = "GEMINI_API_KEY"
+
+            child_section = property_name if property_name in {"jwt", "gemini"} else None
+            if self.tokens[index].kind in {"{", "["}:
+                index = self._parse_value(index, child_section)
+            else:
+                index, scalar_value, scalar_line = self._parse_scalar(index, {",", "}"})
+                if category:
+                    self._record_finding(category, scalar_value, scalar_line)
+
+            if self.tokens[index].kind == ",":
+                index += 1
+                if self.tokens[index].kind == "}":
+                    return index + 1
+                continue
+            if self.tokens[index].kind != "}":
+                raise ValueError("expected flow mapping close")
+            return index + 1
+
+    def _parse_sequence(self, index: int) -> int:
+        index = self._expect(index, "[")
+        if self.tokens[index].kind == "]":
+            return index + 1
+        while True:
+            index = self._parse_value(index, None)
+            if self.tokens[index].kind == ",":
+                index += 1
+                if self.tokens[index].kind == "]":
+                    return index + 1
+                continue
+            if self.tokens[index].kind != "]":
+                raise ValueError("expected flow sequence close")
+            return index + 1
+
+    def _parse_value(self, index: int, section: str | None) -> int:
+        if self.tokens[index].kind == "{":
+            return self._parse_mapping(index, section)
+        if self.tokens[index].kind == "[":
+            return self._parse_sequence(index)
+        index, _, _ = self._parse_scalar(index, {",", "}", "]"})
+        return index
+
+    def _parse_scalar(
+        self,
+        index: int,
+        terminators: set[str],
+    ) -> tuple[int, str, int]:
+        scalar_line = self.tokens[index].line
+        values: list[str] = []
+        while self.tokens[index].kind not in terminators | {"eof"}:
+            values.append(self.tokens[index].value)
+            index += 1
+        if not values:
+            raise ValueError("expected flow scalar")
+        return index, " ".join(values), scalar_line
+
+    def _expect(self, index: int, kind: str) -> int:
+        if self.tokens[index].kind != kind:
+            raise ValueError(f"expected {kind}")
+        return index + 1
+
+    def _record_finding(self, category: str, value: str, line: int) -> None:
+        if is_placeholder(value) or is_obvious_test_fixture(self.path, value):
+            return
+        source_line = self.lines[line - 1] if line <= len(self.lines) else ""
+        if FIXTURE_MARKER in source_line.lower() and is_test_fixture_path(self.path):
+            return
+        finding_key = (category, line)
+        if finding_key not in self.seen_findings:
+            self.findings.append(Finding(category, self.path, line))
+            self.seen_findings.add(finding_key)
+
+
+def scan_yaml_flow_secrets(path: str, text: str) -> list[Finding]:
+    try:
+        return YamlFlowSecretParser(path, text).parse()
+    except (IndexError, RecursionError):
+        return []
 
 
 def scan_line(
@@ -475,15 +715,19 @@ def scan(repo: Path) -> list[Finding]:
 
         text = content.decode("utf-8", errors="replace")
         suffix = candidate.suffix.lower()
-        parsed_json_findings = (
-            scan_json_secrets(entry.path, text)
-            if suffix in {".json", ".jsonc"}
-            else None
-        )
-        json_findings_by_line: dict[int, list[Finding]] = {}
-        if parsed_json_findings is not None:
-            for finding in parsed_json_findings:
-                json_findings_by_line.setdefault(finding.line, []).append(finding)
+        is_json = suffix in {".json", ".jsonc"}
+        parsed_json_findings: list[Finding] = []
+        json_error_line: int | None = None
+        if is_json:
+            parsed_json_findings, json_error_line = scan_json_secrets(entry.path, text)
+            if json_error_line is not None:
+                findings.append(Finding("SCAN_ERROR", entry.path, json_error_line))
+        structured_findings_by_line: dict[int, list[Finding]] = {}
+        for finding in parsed_json_findings:
+            structured_findings_by_line.setdefault(finding.line, []).append(finding)
+        if suffix in {".yaml", ".yml"}:
+            for finding in scan_yaml_flow_secrets(entry.path, text):
+                structured_findings_by_line.setdefault(finding.line, []).append(finding)
 
         yaml_sections: list[YamlSectionState] = []
         for line_number, line in enumerate(text.splitlines(), start=1):
@@ -516,11 +760,11 @@ def scan(repo: Path) -> list[Finding]:
                 line_number,
                 line,
                 direct_sections,
-                include_inline_sections=parsed_json_findings is None,
+                include_inline_sections=not is_json,
             )
             findings.extend(line_findings)
             found_categories = {finding.category for finding in line_findings}
-            for finding in json_findings_by_line.get(line_number, []):
+            for finding in structured_findings_by_line.get(line_number, []):
                 if finding.category not in found_categories:
                     findings.append(finding)
     return findings
