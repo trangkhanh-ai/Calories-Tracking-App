@@ -19,7 +19,7 @@
 
   <ItemGroup>
     <!-- Copy seed CSV cạnh binary để chạy được trong Docker -->
-    <None Include="Data\SeedData\usda_calorie_dataset.csv" CopyToOutputDirectory="PreserveNewest" Link="SeedData\usda_calorie_dataset.csv" />
+    <None Include="Data\SeedData\usda_calorie_dataset.csv" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="SeedData\usda_calorie_dataset.csv" />
   </ItemGroup>
 
   <PropertyGroup>
