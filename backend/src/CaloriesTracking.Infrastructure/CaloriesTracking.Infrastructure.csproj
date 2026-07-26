@@ -32,6 +32,7 @@
     <!-- Exposes the seeder's AfterBatchCommitted test seam so interruption and
          resume can be triggered at an exact checkpoint instead of by sleeping. -->
     <InternalsVisibleTo Include="CaloriesTracking.Api.Tests" />
+    <InternalsVisibleTo Include="CaloriesTracking.Postgres.Tests" />
   </ItemGroup>
 
 </Project>

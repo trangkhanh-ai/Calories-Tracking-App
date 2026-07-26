@@ -8,5 +8,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/CaloriesTracking.Api.Tests/CaloriesTracking.Api.Tests.csproj" />
     <Project Path="tests/CaloriesTracking.Application.Tests/CaloriesTracking.Application.Tests.csproj" />
+    <Project Path="tests/CaloriesTracking.Postgres.Tests/CaloriesTracking.Postgres.Tests.csproj" />
   </Folder>
 </Solution>
