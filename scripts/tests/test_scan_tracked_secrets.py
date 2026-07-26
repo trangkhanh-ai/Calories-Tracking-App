@@ -745,6 +745,122 @@ class ScannerTests(unittest.TestCase):
         self.assertNotIn(jwt, result.stdout)
         self.assertNotIn("embedded-literal-only", result.stdout)
 
+    def test_yaml_block_scalar_generic_assignments_use_content_lines(self) -> None:
+        jwt = "block-run-jwt-secret-1234567890"  # secret-scan: test-fixture
+        password = "block-run-password-secret"  # secret-scan: test-fixture
+        self.track(
+            "workflow.yaml",
+            "steps:\n"
+            "  - run: |\n"
+            "      echo preparing\n"
+            f"      JWT__KEY={jwt}\n"  # secret-scan: test-fixture
+            f"      Password={password}\n",  # secret-scan: test-fixture
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY workflow.yaml:4 [REDACTED]",
+                "PASSWORD workflow.yaml:5 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, password):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_ast_scans_mapping_sequence_and_connection_scalars(self) -> None:
+        mapping_jwt = "mapping-jwt-secret-1234567890"  # secret-scan: test-fixture
+        mapping_gemini = "mapping-gemini-secret"  # secret-scan: test-fixture
+        flat_jwt = "flat-jwt-secret-1234567890"  # secret-scan: test-fixture
+        flat_gemini = "flat-gemini-secret"  # secret-scan: test-fixture
+        password = "scalar-password-secret"  # secret-scan: test-fixture
+        uri_password = "scalar-uri-password"  # secret-scan: test-fixture
+        sequence_jwt = "sequence-jwt-secret-1234567890"  # secret-scan: test-fixture
+        self.track(
+            "yaml-scalars.yaml",
+            f"JWT__KEY: {mapping_jwt}\n"  # secret-scan: test-fixture
+            f"GEMINI__APIKEY: {mapping_gemini}\n"  # secret-scan: test-fixture
+            f'"Jwt:Key": {flat_jwt}\n'  # secret-scan: test-fixture
+            f'"Gemini:ApiKey": {flat_gemini}\n'  # secret-scan: test-fixture
+            f'ConnectionString: "Host=db;Password={password};Database=calories"\n'  # secret-scan: test-fixture
+            f'DatabaseUri: "postgresql://app:{uri_password}@db/calories"\n'  # secret-scan: test-fixture
+            "Assignments:\n"
+            f'  - "JWT__KEY={sequence_jwt}"\n',  # secret-scan: test-fixture
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY yaml-scalars.yaml:1 [REDACTED]",
+                "GEMINI_API_KEY yaml-scalars.yaml:2 [REDACTED]",
+                "JWT_KEY yaml-scalars.yaml:3 [REDACTED]",
+                "GEMINI_API_KEY yaml-scalars.yaml:4 [REDACTED]",
+                "PASSWORD yaml-scalars.yaml:5 [REDACTED]",
+                "POSTGRES_URI_CREDENTIALS yaml-scalars.yaml:6 [REDACTED]",
+                "JWT_KEY yaml-scalars.yaml:8 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (
+            mapping_jwt,
+            mapping_gemini,
+            flat_jwt,
+            flat_gemini,
+            password,
+            uri_password,
+            sequence_jwt,
+        ):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_scalar_assignments_allow_exact_commented_placeholders(self) -> None:
+        self.track(
+            "yaml-scalar-placeholders.yaml",
+            "JWT__KEY: ${JWT_KEY} # runtime placeholder\n"
+            "GEMINI__APIKEY: ${GEMINI_KEY} # runtime placeholder\n"
+            '"Jwt:Key": ${JWT_KEY} # runtime placeholder\n'
+            '"Gemini:ApiKey": ${GEMINI_KEY} # runtime placeholder\n'
+            'ConnectionString: "Host=db;Password=${DB_PASSWORD}"\n'
+            "Assignments:\n"
+            "  - JWT__KEY=${JWT_KEY} # runtime placeholder\n",
+        )
+
+        result = self.scan()
+
+        self.assertEqual(0, result.returncode, result.stdout)
+
+    def test_yaml_ast_scans_every_document(self) -> None:
+        jwt = "multi-document-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "multi-document-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "multi-document.yaml",
+            "---\n"
+            "Jwt:\n"
+            f"  Key: {jwt}\n"
+            "---\n"
+            "Gemini:\n"
+            f"  ApiKey: {gemini}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY multi-document.yaml:3 [REDACTED]",
+                "GEMINI_API_KEY multi-document.yaml:6 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
     def test_yaml_dependency_failure_fails_closed(self) -> None:
         secret = "dependency-jwt-secret-1234567890"  # secret-scan: test-fixture
         self.track("dependency.yaml", f"Jwt:\n  Key: {secret}\n")

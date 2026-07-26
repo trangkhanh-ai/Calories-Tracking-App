@@ -387,6 +387,60 @@ def scan_json_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         return [], 0
 
 
+def generic_secret_categories(
+    path: str,
+    text: str,
+    include_assignments: bool = True,
+    include_inline_sections: bool = True,
+) -> list[str]:
+    categories: list[str] = []
+    found_categories: set[str] = set()
+
+    def add_category(category: str) -> None:
+        if category not in found_categories:
+            categories.append(category)
+            found_categories.add(category)
+
+    def has_literal_match(pattern: re.Pattern[str]) -> bool:
+        return any(
+            not (
+                is_placeholder(match.group("value"))
+                or is_obvious_test_fixture(path, match.group("value"))
+            )
+            for match in pattern.finditer(text)
+        )
+
+    if GOOGLE_API_KEY.search(text):
+        add_category("GOOGLE_API_KEY")
+    if PRIVATE_KEY.search(text):
+        add_category("PRIVATE_KEY")
+    if any(
+        not (
+            is_placeholder(match.group("username"))
+            or is_placeholder(match.group("password"))
+            or is_obvious_test_fixture(path, match.group("password"))
+        )
+        for match in POSTGRES_URI.finditer(text)
+    ):
+        add_category("POSTGRES_URI_CREDENTIALS")
+
+    if include_assignments:
+        for category, pattern in (
+            ("JWT_KEY", JWT_KEY),
+            ("GEMINI_API_KEY", GEMINI_API_KEY),
+            ("PASSWORD", PASSWORD),
+        ):
+            if has_literal_match(pattern):
+                add_category(category)
+
+    if include_inline_sections:
+        if has_literal_match(JWT_NESTED):
+            add_category("JWT_KEY")
+        if has_literal_match(GEMINI_NESTED):
+            add_category("GEMINI_API_KEY")
+    return categories
+
+
 def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
     try:
         import yaml
@@ -399,7 +453,7 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         return raw_line + 1 if isinstance(raw_line, int) and raw_line >= 0 else 0
 
     try:
-        document = yaml.compose(text, Loader=yaml.SafeLoader)
+        documents = list(yaml.compose_all(text, Loader=yaml.SafeLoader))
     except yaml.YAMLError as error:
         mark = getattr(error, "problem_mark", None) or getattr(
             error, "context_mark", None
@@ -408,7 +462,7 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
     except Exception:
         return [], 0
 
-    if document is None:
+    if not any(document is not None for document in documents):
         return [], None
 
     findings: list[Finding] = []
@@ -460,13 +514,7 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         finally:
             active.remove(node_id)
 
-    def record_finding(category: str, value_node: object) -> None:
-        if not isinstance(value_node, ScalarNode):
-            return
-        value = value_node.value
-        if is_placeholder(value) or is_obvious_test_fixture(path, value):
-            return
-        line = mark_line(value_node.start_mark)
+    def add_finding(category: str, line: int) -> None:
         source_line = source_lines[line - 1] if 0 < line <= len(source_lines) else ""
         if FIXTURE_MARKER in source_line.lower() and is_test_fixture_path(path):
             return
@@ -474,6 +522,44 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         if finding_key not in seen_findings:
             findings.append(Finding(category, path, line))
             seen_findings.add(finding_key)
+
+    def record_finding(category: str, value_node: object) -> None:
+        if not isinstance(value_node, ScalarNode):
+            return
+        value = value_node.value
+        if is_placeholder(value) or is_obvious_test_fixture(path, value):
+            return
+        add_finding(category, mark_line(value_node.start_mark))
+
+    def scan_generic_text(candidate: str, line: int) -> None:
+        for category in generic_secret_categories(
+            path, candidate, include_inline_sections=False
+        ):
+            add_finding(category, line)
+
+    def scan_scalar(node: object, mapping_key: str | None = None) -> None:
+        if not isinstance(node, ScalarNode):
+            return
+        if node.style in {"|", ">"}:
+            first_content_index = mark_line(node.start_mark)
+            end_index = getattr(node.end_mark, "line", len(source_lines))
+            if not isinstance(end_index, int):
+                end_index = len(source_lines)
+            for source_index in range(
+                first_content_index, min(end_index, len(source_lines))
+            ):
+                content_line = source_lines[source_index]
+                scan_generic_text(content_line, source_index + 1)
+                if mapping_key is not None:
+                    scan_generic_text(
+                        f"{mapping_key}={content_line.strip()}", source_index + 1
+                    )
+            return
+
+        line = mark_line(node.start_mark)
+        scan_generic_text(node.value, line)
+        if mapping_key is not None:
+            scan_generic_text(f"{mapping_key}={node.value}", line)
 
     def visit(node: object) -> None:
         node_id = id(node)
@@ -499,14 +585,24 @@ def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
                         and child_key.value.casefold() == target_key
                     ):
                         record_finding(category, child_value)
-            for _, value_node in items:
-                visit(value_node)
+            for key_node, value_node in items:
+                scan_scalar(key_node)
+                mapping_key = (
+                    key_node.value if isinstance(key_node, ScalarNode) else None
+                )
+                scan_scalar(value_node, mapping_key)
+                if not isinstance(value_node, ScalarNode):
+                    visit(value_node)
         elif isinstance(node, SequenceNode):
             for value_node in node.value:
                 visit(value_node)
+        elif isinstance(node, ScalarNode):
+            scan_scalar(node)
 
     try:
-        visit(document)
+        for document in documents:
+            if document is not None:
+                visit(document)
     except YamlAstError as error:
         return [], error.line
     except RecursionError:
@@ -525,54 +621,15 @@ def scan_line(
 ) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
-
-    findings: list[Finding] = []
-    found_categories: set[str] = set()
-
-    def add_finding(category: str) -> None:
-        if category not in found_categories:
-            findings.append(Finding(category, path, line_number))
-            found_categories.add(category)
-
-    def has_literal_match(pattern: re.Pattern[str]) -> bool:
-        return any(
-            not (
-                is_placeholder(match.group("value"))
-                or is_obvious_test_fixture(path, match.group("value"))
-            )
-            for match in pattern.finditer(line)
+    return [
+        Finding(category, path, line_number)
+        for category in generic_secret_categories(
+            path,
+            line,
+            include_assignments=include_assignments,
+            include_inline_sections=include_inline_sections,
         )
-
-    if GOOGLE_API_KEY.search(line):
-        add_finding("GOOGLE_API_KEY")
-    if PRIVATE_KEY.search(line):
-        add_finding("PRIVATE_KEY")
-
-    if any(
-        not (
-            is_placeholder(match.group("username"))
-            or is_placeholder(match.group("password"))
-            or is_obvious_test_fixture(path, match.group("password"))
-        )
-        for match in POSTGRES_URI.finditer(line)
-    ):
-        add_finding("POSTGRES_URI_CREDENTIALS")
-
-    if include_assignments:
-        for category, pattern in (
-            ("JWT_KEY", JWT_KEY),
-            ("GEMINI_API_KEY", GEMINI_API_KEY),
-            ("PASSWORD", PASSWORD),
-        ):
-            if has_literal_match(pattern):
-                add_finding(category)
-
-    if include_inline_sections:
-        if has_literal_match(JWT_NESTED):
-            add_finding("JWT_KEY")
-        if has_literal_match(GEMINI_NESTED):
-            add_finding("GEMINI_API_KEY")
-    return findings
+    ]
 
 
 def scan(repo: Path) -> list[Finding]:
@@ -620,12 +677,15 @@ def scan(repo: Path) -> list[Finding]:
                 structured_findings_by_line.setdefault(finding.line, []).append(finding)
 
         for line_number, line in enumerate(text.splitlines(), start=1):
-            line_findings = scan_line(
-                entry.path,
-                line_number,
-                line,
-                include_assignments=not is_yaml,
-                include_inline_sections=not is_json and not is_yaml,
+            line_findings = (
+                []
+                if is_yaml
+                else scan_line(
+                    entry.path,
+                    line_number,
+                    line,
+                    include_inline_sections=not is_json,
+                )
             )
             findings.extend(line_findings)
             found_categories = {finding.category for finding in line_findings}
