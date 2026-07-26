@@ -23,11 +23,20 @@ class HomeScreen extends ConsumerWidget {
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppTheme.primary),
         ),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        // Never render a raw exception: `$e` leaks backend internals.
+        error: (_, _) => _DiaryErrorView(
+          message: 'Không tải được nhật ký. Vui lòng thử lại.',
+          onRetry: () => ref.invalidate(dailyDiaryProvider),
+        ),
         data: (diaryState) {
-          final dailyData = diaryState.data;
+          final dailyData = diaryState.displayData;
+
+          // Nothing to draw: no fresh data and no usable cache.
           if (dailyData == null) {
-            return Center(child: Text('Không có dữ liệu. Lỗi: ${diaryState.errorMessage ?? "Không xác định"}'));
+            return _DiaryErrorView(
+              message: diaryState.message ?? 'Chưa có dữ liệu nhật ký.',
+              onRetry: diaryState.canRetry ? () => ref.invalidate(dailyDiaryProvider) : null,
+            );
           }
 
           final todayCalories = dailyData.totalCaloriesConsumed.toInt();
@@ -153,33 +162,17 @@ class HomeScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    if (diaryState.status != DiaryStatus.success && diaryState.status != DiaryStatus.empty)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: diaryState.status == DiaryStatus.cached ? AppTheme.surfaceVariant : AppTheme.error.withAlpha(20),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: diaryState.status == DiaryStatus.cached ? AppTheme.primary : AppTheme.error),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              diaryState.status == DiaryStatus.cached ? Icons.cloud_off : Icons.warning_amber_rounded,
-                              color: diaryState.status == DiaryStatus.cached ? AppTheme.primary : AppTheme.error,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _getStatusMessage(diaryState.status),
-                                style: GoogleFonts.outfit(
-                                  color: diaryState.status == DiaryStatus.cached ? AppTheme.onSurface : AppTheme.error,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (diaryState.message != null)
+                      _DiaryStatusBanner(
+                        state: diaryState,
+                        onRetry: diaryState.canRetry
+                            ? () => ref.invalidate(dailyDiaryProvider)
+                            : null,
+                        onSignIn: diaryState.status == DiaryStatus.unauthorized
+                            // Replace rather than push: repeated 401s must not
+                            // stack login routes into a navigation loop.
+                            ? () => context.goNamed('login')
+                            : null,
                       ).animate().fadeIn(),
 
                     // ─── Calorie Ring Card ──────────────────────────────
@@ -243,21 +236,128 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  String _getStatusMessage(DiaryStatus status) {
-    switch (status) {
-      case DiaryStatus.cached:
-        return 'Chưa kết nối máy chủ. Đang dùng dữ liệu ngoại tuyến.';
-      case DiaryStatus.unauthorized:
-        return 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.';
-      case DiaryStatus.timeout:
-        return 'Kết nối máy chủ bị lỗi thời gian chờ. Đang dùng dữ liệu ngoại tuyến.';
-      case DiaryStatus.rateLimited:
-        return 'Thao tác quá nhanh. Đang dùng dữ liệu ngoại tuyến.';
-      case DiaryStatus.serverError:
-        return 'Lỗi máy chủ. Đang dùng dữ liệu ngoại tuyến.';
-      default:
-        return '';
-    }
+}
+
+/// Banner explaining a degraded diary read.
+///
+/// The wording distinguishes genuinely-offline from a backend fault, and only
+/// offers a retry where retrying can actually help.
+class _DiaryStatusBanner extends StatelessWidget {
+  const _DiaryStatusBanner({
+    required this.state,
+    this.onRetry,
+    this.onSignIn,
+  });
+
+  final DiaryState<DailyDiaryDto> state;
+  final VoidCallback? onRetry;
+  final VoidCallback? onSignIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOffline = state.status == DiaryStatus.cachedOffline;
+    final accent = isOffline ? AppTheme.primary : AppTheme.error;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isOffline ? AppTheme.surfaceVariant : AppTheme.error.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_iconFor(state.status), color: accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  state.message!,
+                  style: GoogleFonts.outfit(
+                    color: isOffline ? AppTheme.onSurface : AppTheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (onRetry != null || onSignIn != null) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: onSignIn ?? onRetry,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        onSignIn != null ? 'Đăng nhập lại' : 'Thử lại',
+                        style: GoogleFonts.outfit(
+                          color: accent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _iconFor(DiaryStatus status) => switch (status) {
+        DiaryStatus.cachedOffline => Icons.cloud_off,
+        DiaryStatus.unauthorized => Icons.lock_outline,
+        DiaryStatus.timeout => Icons.timer_off_outlined,
+        DiaryStatus.rateLimited => Icons.hourglass_bottom,
+        _ => Icons.warning_amber_rounded,
+      };
+}
+
+/// Full-screen fallback when there is neither fresh data nor a usable cache.
+class _DiaryErrorView extends StatelessWidget {
+  const _DiaryErrorView({required this.message, this.onRetry});
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cloud_off, size: 48, color: AppTheme.onSurface),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: AppTheme.onBackground,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: Text('Thử lại', style: GoogleFonts.outfit()),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -4,35 +4,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../app/theme.dart';
-import '../models/diary_dto.dart';
 import '../providers/diary_provider.dart';
 
-final weeklyStatsProvider = FutureProvider<List<DailyStatDto>>((ref) async {
-  final storage = ref.watch(localStorageProvider);
-  final entries = await storage.loadEntries();
-  final end = DateTime.now();
-  final start = end.subtract(const Duration(days: 6));
-  
-  final Map<String, double> statsMap = {};
-  for (var entry in entries) {
-    if (entry.date.isAfter(start.subtract(const Duration(days: 1))) && 
-        entry.date.isBefore(end.add(const Duration(days: 1)))) {
-      final dateStr = DateFormat('yyyy-MM-dd').format(entry.date);
-      statsMap[dateStr] = (statsMap[dateStr] ?? 0) + entry.calories.toDouble();
-    }
-  }
-
-  final List<DailyStatDto> stats = [];
-  for (var i = 0; i <= 6; i++) {
-    final date = start.add(Duration(days: i));
-    final dateStr = DateFormat('yyyy-MM-dd').format(date);
-    stats.add(DailyStatDto(
-      date: date,
-      caloriesConsumed: statsMap[dateStr] ?? 0,
-    ));
-  }
-  return stats;
-});
+// This screen previously declared its own `weeklyStatsProvider` that read only
+// from local storage. It shadowed the shared provider in diary_provider.dart,
+// so the stats chart never reflected the server at all. It now consumes the
+// shared, server-first provider.
 
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
@@ -51,10 +28,21 @@ class StatsScreen extends ConsumerWidget {
       ),
       body: statsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(color: AppTheme.primary)),
-        error: (e, _) => Center(child: Text('Lỗi: $e')),
-        data: (stats) {
-          if (stats.isEmpty) {
-            return const Center(child: Text('Chưa có dữ liệu thống kê'));
+        // Never render a raw exception to the user.
+        error: (_, _) => _StatsMessage(
+          message: 'Không tải được thống kê. Vui lòng thử lại.',
+          onRetry: () => ref.invalidate(weeklyStatsProvider),
+        ),
+        data: (statsState) {
+          final stats = statsState.displayData;
+
+          if (stats == null || stats.isEmpty) {
+            return _StatsMessage(
+              message: statsState.message ?? 'Chưa có dữ liệu thống kê',
+              onRetry: statsState.canRetry
+                  ? () => ref.invalidate(weeklyStatsProvider)
+                  : null,
+            );
           }
 
           double maxCalories = 0;
@@ -128,6 +116,42 @@ class StatsScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Centred message with an optional retry, used for both the empty and the
+/// degraded states so neither ever shows a raw exception.
+class _StatsMessage extends StatelessWidget {
+  const _StatsMessage({required this.message, this.onRetry});
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(color: AppTheme.onBackground, fontSize: 16),
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: Text('Thử lại', style: GoogleFonts.outfit()),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
