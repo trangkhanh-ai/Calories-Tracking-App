@@ -18,6 +18,9 @@ with the operator, UTC timestamp, deployed commit, and service URL.
   processing. Only the immediate proxy hop is trusted and `ForwardLimit=1`.
   Never enable this setting for a directly exposed container or an unreviewed
   proxy chain.
+- In proxy mode the application disables its own HTTPS redirection because
+  Render enforces HTTPS at the edge. Ordinary Development uses the default
+  proxy setting `false` and does not trust `X-Forwarded-*` headers.
 - Forwarded headers run before rate limiting. The resolved client IP, rather
   than Render's proxy IP, becomes the unauthenticated rate-limit partition key.
   A spoofable proxy boundary would therefore undermine client-IP rate limits.
@@ -93,6 +96,7 @@ database containing legacy Calories Tracking rows. Confirm before deployment:
    an unpinned working tree or rotate unrelated secrets during rollback.
 3. Do not delete Neon and do not run automatic down-migrations. Confirm the
    previous application is compatible with the current schema before traffic.
+   Never insert, delete, or edit rows in `__EFMigrationsHistory` manually.
 4. If compatibility is uncertain, keep traffic stopped and restore or branch
    from the recorded Neon recovery point into a separate database for review.
 5. Recheck both health endpoints, authentication, seeded search, and one
@@ -165,6 +169,8 @@ PostgreSQL (Neon)
 | Variable | Sample / Description |
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `HOSTING__BEHINDTLSTERMINATINGPROXY` | `true` on Render; establishes the reviewed one-hop proxy boundary |
+| `SEEDING__ENABLED` | `true` for the controlled first deployment |
 | `ConnectionStrings__DefaultConnection` | `postgresql://<user>:<password>@ep-xyz.neon.tech/neondb?sslmode=require&channel_binding=require` |
 | `JWT__KEY` | `<GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS>` |
 | `GEMINI__APIKEY` | Gemini API key vừa tạo ở bước 1 |
@@ -217,7 +223,7 @@ curl -i -X POST https://calories-tracking-api.onrender.com/api/auth/register \
   -d '{
     "username": "smoketest_user",
     "email": "smoke@example.com",
-    "password": "Password123!",
+    "password": "<GENERATED_UNIQUE_SMOKE_PASSWORD>",
     "displayName": "Smoke Tester"
   }'
 ```

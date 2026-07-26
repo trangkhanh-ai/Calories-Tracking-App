@@ -37,7 +37,10 @@ Render terminates public TLS and forwards requests to the HTTP container. Proxy
 mode is an explicit security boundary: forwarded headers are trusted only for
 the immediate Render hop with `ForwardLimit=1`. The middleware resolves client
 IP before rate limiting, so do not enable proxy mode on a directly exposed
-container or behind an unreviewed chain that could spoof forwarded IPs.
+container or behind an unreviewed chain that could spoof forwarded IPs. The app
+disables its own HTTPS redirection in proxy mode because Render redirects at the
+edge. Ordinary Development keeps proxy mode off and does not trust forwarded
+headers.
 
 ### Startup evidence
 
@@ -56,7 +59,8 @@ body with HTTP 200 only when Neon is reachable; Render monitors `/health`.
 ### Rollback and release decision
 
 - Roll back Render to the last known-good immutable commit/image.
-- Keep Neon intact and never apply an automatic down-migration.
+- Keep Neon intact, never apply an automatic down-migration, and never insert,
+  delete, or edit `__EFMigrationsHistory` rows manually.
 - Verify schema compatibility before the old application receives traffic. If
   uncertain, restore or branch from the recorded Neon recovery point into a
   separate database and validate it first.

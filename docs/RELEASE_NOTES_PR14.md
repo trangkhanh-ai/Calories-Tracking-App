@@ -21,6 +21,8 @@ this document and `docs/DEPLOYMENT_GUIDE.md`.
 - Production configuration requires secure PostgreSQL, a sufficiently strong
   JWT key, Gemini key, safe HTTPS CORS origin, explicit proxy mode, and explicit
   seeding mode.
+- Repository and CI verification used generated CI-only values and test
+  fixtures. No production credential was supplied, read, or used.
 
 ## Deployment configuration
 
@@ -63,7 +65,9 @@ Render terminates HTTPS before forwarding traffic to the HTTP container.
 Only the immediate proxy hop is trusted (`ForwardLimit=1`). Forwarded headers
 are processed before rate limiting so the resolved client address, not the
 Render proxy address, partitions unauthenticated limits. Do not use this setting
-for a directly exposed container or unreviewed multi-proxy topology.
+for a directly exposed container or unreviewed multi-proxy topology. Application
+HTTPS redirection is disabled in proxy mode because Render owns the redirect;
+ordinary Development leaves proxy mode off and does not trust forwarded headers.
 
 ## Health and startup acceptance
 
@@ -98,7 +102,8 @@ staging deployment from CI container tests.
 1. Stop promotion and record the failing Render deploy, commit, health results,
    and sanitized migration/seed logs.
 2. Redeploy the last known-good immutable commit/image in Render.
-3. Do not delete Neon and do not automatically down-migrate. Confirm the older
+3. Do not delete Neon, do not automatically down-migrate, and never insert,
+   delete, or edit `__EFMigrationsHistory` rows manually. Confirm the older
    application is compatible with the current schema.
 4. If compatibility is uncertain, restore or branch from the recorded Neon
    recovery point into a separate database, validate it, then update Render.
