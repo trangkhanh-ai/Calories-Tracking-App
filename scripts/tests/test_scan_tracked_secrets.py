@@ -144,6 +144,31 @@ class ScannerTests(unittest.TestCase):
         self.assertIn("PASSWORD production.env:1 [REDACTED]", result.stdout)
         self.assertNotIn(secret, result.stdout)
 
+    def test_github_expression_with_literal_suffix_is_not_a_placeholder(self) -> None:
+        password = "Password=${{ secrets.POSTGRES_PASSWORD }}literal-password-suffix"  # secret-scan: test-fixture
+        jwt = "JWT__KEY=${{ env.JWT_KEY }}literal-jwt-suffix"  # secret-scan: test-fixture
+        gemini = "GEMINI__APIKEY=${{ vars.GEMINI_KEY }}literal-gemini-suffix"  # secret-scan: test-fixture
+        self.track("production.env", f"{password}\n{jwt}\n{gemini}\n")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "PASSWORD production.env:1 [REDACTED]",
+                "JWT_KEY production.env:2 [REDACTED]",
+                "GEMINI_API_KEY production.env:3 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_suffix in (
+            "literal-password-suffix",
+            "literal-jwt-suffix",
+            "literal-gemini-suffix",
+        ):
+            self.assertNotIn(raw_suffix, result.stdout)
+
     def test_ignores_source_property_assignments_and_pattern_declarations(self) -> None:
         self.track(
             "source.cs",

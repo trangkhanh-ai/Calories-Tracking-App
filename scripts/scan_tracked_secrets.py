@@ -23,14 +23,16 @@ POSTGRES_URI = re.compile(
     r"postgres(?:ql)?://(?P<username>[^\s/:@]+):(?P<password>[^\s/@]+)@",
     re.IGNORECASE,
 )
-PLACEHOLDER_VALUE = (
+GITHUB_VALUE = (
     r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
-    r"|[^\s\"'#]+"
+    r"[^\s\"'#]*"
 )
-PASSWORD_VALUE = (
+PASSWORD_GITHUB_VALUE = (
     r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
-    r"|[^\s;\"'#]+"
+    r"[^\s;\"'#]*"
 )
+PLACEHOLDER_VALUE = GITHUB_VALUE + r"|[^\s\"'#]+"
+PASSWORD_VALUE = PASSWORD_GITHUB_VALUE + r"|[^\s;\"'#]+"
 JWT_KEY = re.compile(
     rf"(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
     re.IGNORECASE,
