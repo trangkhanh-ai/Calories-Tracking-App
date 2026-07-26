@@ -169,6 +169,91 @@ class ScannerTests(unittest.TestCase):
         ):
             self.assertNotIn(raw_suffix, result.stdout)
 
+    def test_placeholder_first_match_does_not_hide_later_literal(self) -> None:
+        uri = "postgresql://${PGUSER}:${PGPASSWORD}@postgres/calories postgresql://app:literal-uri-secret@db/calories"  # secret-scan: test-fixture
+        jwt = "JWT__KEY=${JWT_KEY} JWT__KEY=literal-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "GEMINI__APIKEY=${GEMINI_KEY} GEMINI__APIKEY=literal-gemini-secret"  # secret-scan: test-fixture
+        password = "Password=${DB_PASSWORD} Password=literal-password-secret"  # secret-scan: test-fixture
+        self.track("production.env", f"{uri}\n{jwt}\n{gemini}\n{password}\n")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "POSTGRES_URI_CREDENTIALS production.env:1 [REDACTED]",
+                "JWT_KEY production.env:2 [REDACTED]",
+                "GEMINI_API_KEY production.env:3 [REDACTED]",
+                "PASSWORD production.env:4 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (
+            "literal-uri-secret",
+            "literal-jwt-secret-1234567890",
+            "literal-gemini-secret",
+            "literal-password-secret",
+        ):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_detects_native_nested_json_and_yaml_configuration(self) -> None:
+        json_jwt = "nested-json-jwt-secret-1234567890"  # secret-scan: test-fixture
+        json_gemini = "nested-json-gemini-secret"  # secret-scan: test-fixture
+        yaml_jwt = "nested-yaml-jwt-secret-1234567890"  # secret-scan: test-fixture
+        yaml_gemini = "nested-yaml-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "appsettings.json",
+            "{\n"
+            '  "Jwt": {\n'
+            f'    "Key": "{json_jwt}"\n'
+            "  },\n"
+            f'  "Gemini": {{ "ApiKey": "{json_gemini}" }}\n'  # secret-scan: test-fixture
+            "}\n",
+        )
+        self.track(
+            "appsettings.yaml",
+            "Jwt:\n"
+            f"  Key: {yaml_jwt}\n"
+            "Gemini:\n"
+            f"  ApiKey: {yaml_gemini}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY appsettings.json:3 [REDACTED]",
+                "GEMINI_API_KEY appsettings.json:5 [REDACTED]",
+                "JWT_KEY appsettings.yaml:2 [REDACTED]",
+                "GEMINI_API_KEY appsettings.yaml:4 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (json_jwt, json_gemini, yaml_jwt, yaml_gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_example_text_cannot_hide_high_entropy_test_credentials(self) -> None:
+        uri = "postgresql://fixture:HighEntropyUriCredential123@db.example.invalid/calories"  # secret-scan: test-fixture
+        password = "Password=HighEntropyPasswordCredential123 # example configuration"  # secret-scan: test-fixture
+        self.track("tests/example_fixture.txt", f"{uri}\n{password}\n")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "POSTGRES_URI_CREDENTIALS tests/example_fixture.txt:1 [REDACTED]",
+                "PASSWORD tests/example_fixture.txt:2 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn("HighEntropyUriCredential123", result.stdout)
+        self.assertNotIn("HighEntropyPasswordCredential123", result.stdout)
+
     def test_ignores_source_property_assignments_and_pattern_declarations(self) -> None:
         self.track(
             "source.cs",
@@ -189,7 +274,7 @@ class ScannerTests(unittest.TestCase):
 
         result = self.scan()
 
-        self.assertEqual(0, result.returncode)
+        self.assertEqual(0, result.returncode, result.stdout)
 
     def test_detects_all_required_categories_without_printing_values(self) -> None:
         findings = (

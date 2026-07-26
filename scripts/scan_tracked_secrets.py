@@ -45,6 +45,26 @@ PASSWORD = re.compile(
     rf"\bPassword=\s*[\"']?(?P<value>{PASSWORD_VALUE})",
     re.IGNORECASE,
 )
+JWT_NESTED = re.compile(
+    rf"[\"']?Jwt[\"']?\s*:\s*\{{[^\r\n}}]*?[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+GEMINI_NESTED = re.compile(
+    rf"[\"']?Gemini[\"']?\s*:\s*\{{[^\r\n}}]*?[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+JWT_CHILD = re.compile(
+    rf"^\s*[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+GEMINI_CHILD = re.compile(
+    rf"^\s*[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    re.IGNORECASE,
+)
+SECTION_HEADER = re.compile(
+    r"^(?P<indent>\s*)[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*(?:\{\s*)?(?:#.*)?$",
+    re.IGNORECASE,
+)
 EXPLICIT_PLACEHOLDER = re.compile(
     r"(?:<[^<>\r\n]+>|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}|\.\.\.|redacted)",
     re.IGNORECASE,
@@ -108,43 +128,76 @@ def is_test_fixture_path(path: str) -> bool:
     return bool({"test", "tests", "fixture", "fixtures"} & {part.lower() for part in Path(path).parts})
 
 
-def is_obvious_test_fixture(path: str, line: str, value: str) -> bool:
+def is_obvious_test_fixture(path: str, value: str) -> bool:
     if not is_test_fixture_path(path):
         return False
-    if "example" in line.lower():
-        return True
-    return value.strip().strip("\"'").lower() in {"test", "secret", "password"}
+    return value.strip().strip("\"'").lower() in {
+        "test",
+        "secret",
+        "password",
+        "p%40ssword",
+        "p%40ss%3aword",
+    }
 
 
-def scan_line(path: str, line_number: int, line: str) -> list[Finding]:
+def scan_line(
+    path: str,
+    line_number: int,
+    line: str,
+    nested_section: str | None = None,
+) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
 
     findings: list[Finding] = []
-    if GOOGLE_API_KEY.search(line):
-        findings.append(Finding("GOOGLE_API_KEY", path, line_number))
-    if PRIVATE_KEY.search(line):
-        findings.append(Finding("PRIVATE_KEY", path, line_number))
+    found_categories: set[str] = set()
 
-    uri_match = POSTGRES_URI.search(line)
-    if uri_match and not (
-        is_placeholder(uri_match.group("username"))
-        or is_placeholder(uri_match.group("password"))
-        or is_obvious_test_fixture(path, line, uri_match.group("password"))
+    def add_finding(category: str) -> None:
+        if category not in found_categories:
+            findings.append(Finding(category, path, line_number))
+            found_categories.add(category)
+
+    def has_literal_match(pattern: re.Pattern[str]) -> bool:
+        return any(
+            not (
+                is_placeholder(match.group("value"))
+                or is_obvious_test_fixture(path, match.group("value"))
+            )
+            for match in pattern.finditer(line)
+        )
+
+    if GOOGLE_API_KEY.search(line):
+        add_finding("GOOGLE_API_KEY")
+    if PRIVATE_KEY.search(line):
+        add_finding("PRIVATE_KEY")
+
+    if any(
+        not (
+            is_placeholder(match.group("username"))
+            or is_placeholder(match.group("password"))
+            or is_obvious_test_fixture(path, match.group("password"))
+        )
+        for match in POSTGRES_URI.finditer(line)
     ):
-        findings.append(Finding("POSTGRES_URI_CREDENTIALS", path, line_number))
+        add_finding("POSTGRES_URI_CREDENTIALS")
 
     for category, pattern in (
         ("JWT_KEY", JWT_KEY),
         ("GEMINI_API_KEY", GEMINI_API_KEY),
         ("PASSWORD", PASSWORD),
     ):
-        match = pattern.search(line)
-        if match and not (
-            is_placeholder(match.group("value"))
-            or is_obvious_test_fixture(path, line, match.group("value"))
-        ):
-            findings.append(Finding(category, path, line_number))
+        if has_literal_match(pattern):
+            add_finding(category)
+
+    if has_literal_match(JWT_NESTED):
+        add_finding("JWT_KEY")
+    if has_literal_match(GEMINI_NESTED):
+        add_finding("GEMINI_API_KEY")
+
+    if nested_section == "jwt" and has_literal_match(JWT_CHILD):
+        add_finding("JWT_KEY")
+    elif nested_section == "gemini" and has_literal_match(GEMINI_CHILD):
+        add_finding("GEMINI_API_KEY")
     return findings
 
 
@@ -172,8 +225,21 @@ def scan(repo: Path) -> list[Finding]:
             continue
 
         text = content.decode("utf-8", errors="replace")
+        nested_section: str | None = None
+        section_indent = -1
         for line_number, line in enumerate(text.splitlines(), start=1):
-            findings.extend(scan_line(entry.path, line_number, line))
+            stripped = line.strip()
+            indentation = len(line) - len(line.lstrip())
+            if nested_section and stripped and indentation <= section_indent:
+                nested_section = None
+                section_indent = -1
+
+            header_match = SECTION_HEADER.match(line)
+            if header_match:
+                nested_section = header_match.group("section").lower()
+                section_indent = len(header_match.group("indent"))
+
+            findings.extend(scan_line(entry.path, line_number, line, nested_section))
     return findings
 
 
