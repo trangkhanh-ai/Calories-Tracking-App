@@ -235,6 +235,71 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (json_jwt, json_gemini, yaml_jwt, yaml_gemini):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_tracks_structured_sections_across_braces_comments_and_direct_children(self) -> None:
+        json_direct_jwt = "json-direct-jwt-secret-1234567890"  # secret-scan: test-fixture
+        json_inline_gemini = "json-inline-gemini-secret"  # secret-scan: test-fixture
+        yaml_direct_jwt = "yaml-comment-jwt-secret-1234567890"  # secret-scan: test-fixture
+        self.track(
+            "structured.json",
+            "{\n"
+            '  "Jwt":\n'
+            "  {\n"
+            '    "Metadata": {\n'
+            '      "Key": "nested-metadata-key"\n'
+            "    },\n"
+            f'    "Key": "{json_direct_jwt}"\n'
+            "  },\n"
+            f'  "Gemini": {{ "Issuer": "earlier", "ApiKey": "{json_inline_gemini}" }}\n'
+            "}\n",
+        )
+        self.track(
+            "structured.yaml",
+            "Jwt:\n"
+            "# same-indent comment must not close the section\n"
+            f"  Key: {yaml_direct_jwt}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY structured.json:7 [REDACTED]",
+                "GEMINI_API_KEY structured.json:9 [REDACTED]",
+                "JWT_KEY structured.yaml:3 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (json_direct_jwt, json_inline_gemini, yaml_direct_jwt):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_whitespace_suffix_after_placeholder_is_detected_for_assignments_and_nested_key(self) -> None:
+        password = "Password=${JWT_KEY} known-fallback"  # secret-scan: test-fixture
+        jwt = "JWT__KEY=${{ secrets.JWT_KEY }} known-fallback"  # secret-scan: test-fixture
+        gemini = "GEMINI__APIKEY=${GEMINI_KEY} known-fallback"  # secret-scan: test-fixture
+        self.track("whitespace.env", f"{password}\n{jwt}\n{gemini}\n")
+        self.track(
+            "whitespace.json",
+            f'{{ "Jwt": {{ "Key": "${{JWT_KEY}} known-fallback" }} }}\n',
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "PASSWORD whitespace.env:1 [REDACTED]",
+                "JWT_KEY whitespace.env:2 [REDACTED]",
+                "GEMINI_API_KEY whitespace.env:3 [REDACTED]",
+                "JWT_KEY whitespace.json:1 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_value in (password, jwt, gemini, "known-fallback"):
+            self.assertNotIn(raw_value, result.stdout)
+
     def test_example_text_cannot_hide_high_entropy_test_credentials(self) -> None:
         uri = "postgresql://fixture:HighEntropyUriCredential123@db.example.invalid/calories"  # secret-scan: test-fixture
         password = "Password=HighEntropyPasswordCredential123 # example configuration"  # secret-scan: test-fixture

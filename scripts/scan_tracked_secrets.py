@@ -23,16 +23,25 @@ POSTGRES_URI = re.compile(
     r"postgres(?:ql)?://(?P<username>[^\s/:@]+):(?P<password>[^\s/@]+)@",
     re.IGNORECASE,
 )
-GITHUB_VALUE = (
+SHELL_PLACEHOLDER = r"\$\{[A-Za-z_][A-Za-z0-9_]*\}"
+GITHUB_PLACEHOLDER = (
     r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
-    r"[^\s\"'#]*"
 )
-PASSWORD_GITHUB_VALUE = (
-    r"\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
-    r"[^\s;\"'#]*"
+PLACEHOLDER_WITH_SUFFIX = (
+    rf"(?:{GITHUB_PLACEHOLDER}|{SHELL_PLACEHOLDER})[ \t]+[^\s\"'#]+"
 )
-PLACEHOLDER_VALUE = GITHUB_VALUE + r"|[^\s\"'#]+"
-PASSWORD_VALUE = PASSWORD_GITHUB_VALUE + r"|[^\s;\"'#]+"
+PASSWORD_PLACEHOLDER_WITH_SUFFIX = (
+    rf"(?:{GITHUB_PLACEHOLDER}|{SHELL_PLACEHOLDER})[ \t]+[^\s;\"'#]+"
+)
+GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s\"'#]*"
+PASSWORD_GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s;\"'#]*"
+PLACEHOLDER_VALUE = PLACEHOLDER_WITH_SUFFIX + r"|" + GITHUB_VALUE + r"|[^\s\"'#]+"
+PASSWORD_VALUE = (
+    PASSWORD_PLACEHOLDER_WITH_SUFFIX
+    + r"|"
+    + PASSWORD_GITHUB_VALUE
+    + r"|[^\s;\"'#]+"
+)
 JWT_KEY = re.compile(
     rf"(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
     re.IGNORECASE,
@@ -46,11 +55,11 @@ PASSWORD = re.compile(
     re.IGNORECASE,
 )
 JWT_NESTED = re.compile(
-    rf"[\"']?Jwt[\"']?\s*:\s*\{{[^\r\n}}]*?[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    rf"[\"']?Jwt[\"']?\s*:\s*\{{[^\r\n{{}}]*?[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
     re.IGNORECASE,
 )
 GEMINI_NESTED = re.compile(
-    rf"[\"']?Gemini[\"']?\s*:\s*\{{[^\r\n}}]*?[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
+    rf"[\"']?Gemini[\"']?\s*:\s*\{{[^\r\n{{}}]*?[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
     re.IGNORECASE,
 )
 JWT_CHILD = re.compile(
@@ -66,7 +75,7 @@ SECTION_HEADER = re.compile(
     re.IGNORECASE,
 )
 EXPLICIT_PLACEHOLDER = re.compile(
-    r"(?:<[^<>\r\n]+>|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}|\.\.\.|redacted)",
+    rf"(?:<[^<>\r\n]+>|{SHELL_PLACEHOLDER}|{GITHUB_PLACEHOLDER}|\.\.\.|redacted)",
     re.IGNORECASE,
 )
 
@@ -140,11 +149,55 @@ def is_obvious_test_fixture(path: str, value: str) -> bool:
     }
 
 
+def structural_brace_counts(line: str) -> tuple[int, int]:
+    """Count object braces while ignoring quoted values and placeholders."""
+    opening = 0
+    closing = 0
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            index += 1
+            continue
+
+        if character in "\"'":
+            quote = character
+            index += 1
+            continue
+        if character == "#" or line.startswith("//", index):
+            break
+        if line.startswith("${{", index):
+            placeholder_end = line.find("}}", index + 3)
+            if placeholder_end != -1:
+                index = placeholder_end + 2
+                continue
+        if line.startswith("${", index):
+            placeholder_end = line.find("}", index + 2)
+            if placeholder_end != -1:
+                index = placeholder_end + 1
+                continue
+        if character == "{":
+            opening += 1
+        elif character == "}":
+            closing += 1
+        index += 1
+    return opening, closing
+
+
 def scan_line(
     path: str,
     line_number: int,
     line: str,
     nested_section: str | None = None,
+    direct_child_indent: int | None = None,
 ) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
@@ -194,9 +247,11 @@ def scan_line(
     if has_literal_match(GEMINI_NESTED):
         add_finding("GEMINI_API_KEY")
 
-    if nested_section == "jwt" and has_literal_match(JWT_CHILD):
+    indentation = len(line) - len(line.lstrip())
+    is_direct_child = direct_child_indent is not None and indentation == direct_child_indent
+    if nested_section == "jwt" and is_direct_child and has_literal_match(JWT_CHILD):
         add_finding("JWT_KEY")
-    elif nested_section == "gemini" and has_literal_match(GEMINI_CHILD):
+    elif nested_section == "gemini" and is_direct_child and has_literal_match(GEMINI_CHILD):
         add_finding("GEMINI_API_KEY")
     return findings
 
@@ -227,19 +282,78 @@ def scan(repo: Path) -> list[Finding]:
         text = content.decode("utf-8", errors="replace")
         nested_section: str | None = None
         section_indent = -1
+        direct_child_indent: int | None = None
+        section_brace_depth: int | None = None
+        awaiting_open_brace = False
+        brace_depth = 0
         for line_number, line in enumerate(text.splitlines(), start=1):
             stripped = line.strip()
             indentation = len(line) - len(line.lstrip())
-            if nested_section and stripped and indentation <= section_indent:
+            is_comment_or_blank = not stripped or stripped.startswith(("#", "//"))
+            opening_braces, closing_braces = structural_brace_counts(line)
+
+            if (
+                nested_section
+                and section_brace_depth is None
+                and not awaiting_open_brace
+                and not is_comment_or_blank
+                and indentation <= section_indent
+            ):
                 nested_section = None
                 section_indent = -1
+                direct_child_indent = None
+
+            if nested_section and awaiting_open_brace and not is_comment_or_blank:
+                if opening_braces and indentation <= section_indent:
+                    section_brace_depth = brace_depth + 1
+                    awaiting_open_brace = False
+                elif indentation > section_indent:
+                    awaiting_open_brace = False
+                else:
+                    nested_section = None
+                    section_indent = -1
+                    direct_child_indent = None
+                    awaiting_open_brace = False
 
             header_match = SECTION_HEADER.match(line)
             if header_match:
                 nested_section = header_match.group("section").lower()
                 section_indent = len(header_match.group("indent"))
+                direct_child_indent = None
+                if opening_braces:
+                    section_brace_depth = brace_depth + 1
+                    awaiting_open_brace = False
+                else:
+                    section_brace_depth = None
+                    awaiting_open_brace = True
 
-            findings.extend(scan_line(entry.path, line_number, line, nested_section))
+            is_section_content = (
+                nested_section
+                and not header_match
+                and not is_comment_or_blank
+                and indentation > section_indent
+                and stripped not in {"{", "}", "},"}
+            )
+            if is_section_content and direct_child_indent is None:
+                direct_child_indent = indentation
+
+            findings.extend(
+                scan_line(
+                    entry.path,
+                    line_number,
+                    line,
+                    nested_section,
+                    direct_child_indent,
+                )
+            )
+
+            brace_depth = max(0, brace_depth + opening_braces - closing_braces)
+            if section_brace_depth is not None and brace_depth < section_brace_depth:
+                nested_section = None
+                section_indent = -1
+                direct_child_indent = None
+                section_brace_depth = None
+                awaiting_open_brace = False
     return findings
 
 
