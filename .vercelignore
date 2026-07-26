@@ -1,0 +1,75 @@
+# Deployment scope for the Vercel project: Flutter Web sources only.
+#
+# Vercel does NOT honour .gitignore when collecting deployment files. Without
+# this file every local build artefact is uploaded on each deploy — the source
+# upload measured 11,831 files / 2,122 MB (975.9 MB compressed), of which
+# build/, backend/ and .dart_tool/ accounted for ~2,111 MB.
+#
+# Everything the web build actually needs must stay OUT of this file:
+#   lib/  web/  assets/  pubspec.yaml  pubspec.lock  analysis_options.yaml
+#   .metadata  vercel.json  scripts/vercel-build.sh
+#
+# scripts/validate_vercelignore.py enforces both halves of that contract in CI.
+
+# ---------------------------------------------------------------------------
+# Local environment files. Vercel injects the real values from the project's
+# environment settings at build time, so these must never ride along in the
+# source upload. Vercel auto-ignores .env.local but NOT .env, which was being
+# uploaded on every deploy before this rule.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# .NET backend — built and deployed separately (Render), never by Vercel.
+# ---------------------------------------------------------------------------
+backend/
+
+# ---------------------------------------------------------------------------
+# Local build output and tool caches. Vercel regenerates these from
+# pubspec.lock via `flutter pub get --enforce-lockfile` + `flutter build web`.
+# ---------------------------------------------------------------------------
+build/
+.dart_tool/
+.flutter-sdk/
+coverage/
+
+# ---------------------------------------------------------------------------
+# Non-web platform sources. Irrelevant to `flutter build web`.
+# ---------------------------------------------------------------------------
+android/
+ios/
+linux/
+macos/
+windows/
+
+# ---------------------------------------------------------------------------
+# Tests — run in CI, not during the Vercel build.
+# ---------------------------------------------------------------------------
+test/
+integration_test/
+
+# ---------------------------------------------------------------------------
+# Documentation and CI configuration.
+# ---------------------------------------------------------------------------
+docs/
+.github/
+
+# ---------------------------------------------------------------------------
+# Repo tooling not used by the web build.
+# scripts/vercel-build.sh is deliberately NOT excluded — it is the buildCommand.
+# ---------------------------------------------------------------------------
+scripts/ci/
+scripts/tests/
+scripts/__pycache__/
+scripts/node_modules/
+scripts/process_usda.py
+scripts/scan_tracked_secrets.py
+scripts/requirements-secret-scan.txt
+
+# ---------------------------------------------------------------------------
+# Local database files.
+# ---------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3

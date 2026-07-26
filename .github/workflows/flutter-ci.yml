@@ -20,6 +20,8 @@ on:
       # verified by the same pipeline that builds it.
       - "vercel.json"
       - "scripts/vercel-build.sh"
+      - ".vercelignore"
+      - "scripts/validate_vercelignore.py"
       - "docs/DEPLOYMENT_GUIDE.md"
       - "docs/DEPLOY_RENDER.md"
       - ".github/workflows/flutter-ci.yml"
@@ -42,6 +44,8 @@ on:
       - "macos/**"
       - "vercel.json"
       - "scripts/vercel-build.sh"
+      - ".vercelignore"
+      - "scripts/validate_vercelignore.py"
       - "docs/DEPLOYMENT_GUIDE.md"
       - "docs/DEPLOY_RENDER.md"
       - ".github/workflows/flutter-ci.yml"
@@ -81,6 +85,12 @@ jobs:
         # Syntax check only — the script is never executed here, because Flutter
         # is already installed by flutter-action above.
         run: bash -n scripts/vercel-build.sh
+
+      - name: Validate Vercel upload scope
+        # Vercel ignores .gitignore, so without .vercelignore the source upload
+        # balloons to ~2.1 GB of build/, backend/ and .dart_tool/ artefacts.
+        # Deterministic pattern test — no Vercel credentials needed in CI.
+        run: python3 scripts/validate_vercelignore.py
 
       - name: Restore locked dependencies
         run: flutter pub get --enforce-lockfile
