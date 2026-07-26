@@ -14,6 +14,33 @@ namespace CaloriesTracking.Infrastructure.Data;
 /// </summary>
 public static class MigrationPreflight
 {
+    public static async Task EnsureNoDuplicateFoodFdcIdsAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken = default)
+    {
+        var applied = await dbContext.Database.GetAppliedMigrationsAsync(cancellationToken);
+        if (!applied.Any())
+        {
+            return;
+        }
+
+        var duplicateFdcIds = await dbContext.Foods
+            .Where(food => food.FdcId != null)
+            .GroupBy(food => food.FdcId)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key!.Value)
+            .Take(10)
+            .ToListAsync(cancellationToken);
+
+        if (duplicateFdcIds.Count > 0)
+        {
+            throw new DataIntegrityAppException(
+                "Duplicate non-null FdcId values exist in the Foods table and must be " +
+                "resolved manually before the unique index can be applied. Affected FdcId " +
+                "values (first 10): " + string.Join(", ", duplicateFdcIds) + ".");
+        }
+    }
+
     public static async Task EnsureNoCaseInsensitiveUserConflictsAsync(
         ApplicationDbContext dbContext,
         CancellationToken cancellationToken = default)

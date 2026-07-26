@@ -2,10 +2,10 @@ using System.Text;
 using System.Threading.RateLimiting;
 using CaloriesTracking.Api.Configuration;
 using CaloriesTracking.Api.Middleware;
+using CaloriesTracking.Api.Startup;
 using CaloriesTracking.Application;
 using CaloriesTracking.Infrastructure;
 using CaloriesTracking.Infrastructure.Data;
-using CaloriesTracking.Infrastructure.Data.Seeders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
@@ -165,6 +165,7 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+builder.Services.AddScoped<DatabaseStartupInitializer>();
 
 var app = builder.Build();
 var behindTlsTerminatingProxy = app.Configuration.GetValue<bool>(
@@ -200,30 +201,9 @@ if (app.Environment.IsDevelopment())
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var initializer = scope.ServiceProvider.GetRequiredService<DatabaseStartupInitializer>();
 
-    // Report case-insensitive user conflicts as a named diagnostic before the
-    // unique indexes reject them with an opaque provider error. Detection only.
-    await MigrationPreflight.EnsureNoCaseInsensitiveUserConflictsAsync(dbContext);
-
-    // Dùng migrations thay cho EnsureCreated. DB cũ tạo bằng EnsureCreated không có
-    // bảng __EFMigrationsHistory — xóa file calories.db cũ một lần rồi chạy lại.
-    await dbContext.Database.MigrateAsync();
-
-    // Detect data that would violate the unique indexes before importing more.
-    // Throws a clear diagnostic naming the conflicting FdcIds; never mutates
-    // or deletes the conflicting rows.
-    await DatabaseSeeder.EnsureNoDuplicateFoodIdentitiesAsync(dbContext);
-
-    // Seed USDA foods: ưu tiên SeedData cạnh binary (Docker), fallback về source tree (dev)
-    var seedFolder = Path.Combine(AppContext.BaseDirectory, "SeedData");
-    if (!Directory.Exists(seedFolder))
-    {
-        seedFolder = Path.Combine(Directory.GetCurrentDirectory(), "..", "CaloriesTracking.Infrastructure", "Data", "SeedData");
-    }
-
-    var seeder = scope.ServiceProvider.GetRequiredService<UsdaFoodSeeder>();
-    await seeder.SeedAsync(seedFolder, app.Lifetime.ApplicationStopping);
+    await initializer.InitializeAsync(cancellationToken: app.Lifetime.ApplicationStopping);
 }
 
 if (!behindTlsTerminatingProxy)
