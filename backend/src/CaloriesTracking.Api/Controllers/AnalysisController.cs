@@ -1,5 +1,6 @@
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Analysis;
+using CaloriesTracking.Application.Exceptions;
 using CaloriesTracking.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,15 @@ namespace CaloriesTracking.Api.Controllers;
 [EnableRateLimiting("GeminiAnalysis")]
 public class AnalysisController : ControllerBase
 {
+    /// <summary>Decoded-image budget. Kept in sync with the client-facing message.</summary>
+    public const int MaxDecodedImageBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// Base64 inflates by 4/3, so this is the smallest string that could decode
+    /// past the budget. Checked before decoding to avoid materializing the array.
+    /// </summary>
+    private const int MaxBase64Length = 7_000_000;
+
     private readonly IFoodAnalysisService _foodAnalysisService;
     private readonly ILogger<AnalysisController> _logger;
 
@@ -27,19 +37,23 @@ public class AnalysisController : ControllerBase
     [RequestSizeLimit(8 * 1024 * 1024)]
     public async Task<IActionResult> AnalyzeFood([FromBody] AnalyzeFoodRequest request, CancellationToken cancellationToken)
     {
+        // Validation throws typed exceptions so every failure leaves this
+        // endpoint as RFC 7807 ProblemDetails, matching the rest of the API.
         if (string.IsNullOrWhiteSpace(request.ImageBase64))
         {
-            return BadRequest(new { error = "imageBase64 is required" });
+            throw new ValidationAppException("imageBase64", "imageBase64 is required.");
         }
 
         if (request.ImageBase64.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
         {
-            return BadRequest(new { error = "Raw base64 string is required, do not include data URI prefix." });
+            throw new ValidationAppException(
+                "imageBase64",
+                "Raw base64 string is required; do not include the data URI prefix.");
         }
 
-        if (request.ImageBase64.Length > 7_000_000)
+        if (request.ImageBase64.Length > MaxBase64Length)
         {
-            return StatusCode(413, new { error = "Decoded image file exceeds 5MB limit." });
+            throw new PayloadTooLargeAppException("Decoded image exceeds the 5 MB limit.");
         }
 
         byte[] imageBytes;
@@ -49,17 +63,17 @@ public class AnalysisController : ControllerBase
         }
         catch (FormatException)
         {
-            return BadRequest(new { error = "imageBase64 is not valid base64" });
+            throw new ValidationAppException("imageBase64", "imageBase64 is not valid base64.");
         }
 
         if (imageBytes.Length == 0)
         {
-            return BadRequest(new { error = "Image is empty" });
+            throw new ValidationAppException("imageBase64", "Image is empty.");
         }
-        
-        if (imageBytes.Length > 5 * 1024 * 1024)
+
+        if (imageBytes.Length > MaxDecodedImageBytes)
         {
-            return StatusCode(413, new { error = "Decoded image file exceeds 5MB limit." });
+            throw new PayloadTooLargeAppException("Decoded image exceeds the 5 MB limit.");
         }
 
         try
@@ -67,46 +81,18 @@ public class AnalysisController : ControllerBase
             var result = await _foodAnalysisService.AnalyzeAsync(imageBytes, cancellationToken);
             return Ok(result);
         }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-        catch (NotSupportedException ex)
-        {
-            return StatusCode(415, new { error = ex.Message });
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("exceed", StringComparison.OrdinalIgnoreCase))
-        {
-            return StatusCode(413, new { error = ex.Message });
-        }
-        catch (GeminiUnavailableException ex)
-        {
-            _logger.LogWarning(ex, "Gemini upstream unavailable.");
-            return StatusCode(503, new { error = "Gemini AI service is temporarily unavailable." });
-        }
-        catch (GeminiException ex)
-        {
-            _logger.LogError(ex, "Gemini service exception.");
-            return StatusCode(500, new { error = "Failed to analyze image due to an internal error." });
-        }
         catch (TimeoutRejectedException ex)
         {
+            // Polly gave up waiting on the upstream. This is a dependency
+            // timeout, not a client abort — surface it as 503.
             _logger.LogWarning(ex, "Gemini analysis request timed out.");
-            return StatusCode(503, new { error = "Gemini AI service request timed out." });
+            throw new GeminiUnavailableException("Gemini analysis request timed out.");
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return StatusCode(499, new { error = "Request was cancelled by client." });
-        }
-        catch (OperationCanceledException ex)
-        {
-            _logger.LogWarning(ex, "Gemini analysis request timed out.");
-            return StatusCode(503, new { error = "Gemini AI service request timed out." });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Food analysis failed");
-            return StatusCode(500, new { error = "Failed to analyze image due to an internal error." });
+            // Cancelled without the client aborting means an internal deadline fired.
+            _logger.LogWarning("Gemini analysis exceeded its internal deadline.");
+            throw new GeminiUnavailableException("Gemini analysis exceeded its deadline.");
         }
     }
 }

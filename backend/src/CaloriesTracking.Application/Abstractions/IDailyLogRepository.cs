@@ -10,6 +10,15 @@ public interface IDailyLogRepository
 
     void Add(DailyLog dailyLog);
 
+    /// <summary>Removes a rejected insert from the change tracker before a retry.</summary>
+    void Detach(DailyLog dailyLog);
+
+    /// <summary>
+    /// Drops all tracked state after a rolled-back transaction so the next
+    /// attempt re-reads from the database instead of replaying stale entities.
+    /// </summary>
+    void ClearChangeTracker();
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default);

@@ -5,6 +5,7 @@ using CaloriesTracking.Api.Middleware;
 using CaloriesTracking.Application;
 using CaloriesTracking.Infrastructure;
 using CaloriesTracking.Infrastructure.Data;
+using CaloriesTracking.Infrastructure.Data.Seeders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -165,9 +166,19 @@ if (app.Environment.IsDevelopment())
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    // Report case-insensitive user conflicts as a named diagnostic before the
+    // unique indexes reject them with an opaque provider error. Detection only.
+    await MigrationPreflight.EnsureNoCaseInsensitiveUserConflictsAsync(dbContext);
+
     // Dùng migrations thay cho EnsureCreated. DB cũ tạo bằng EnsureCreated không có
     // bảng __EFMigrationsHistory — xóa file calories.db cũ một lần rồi chạy lại.
     await dbContext.Database.MigrateAsync();
+
+    // Detect data that would violate the unique indexes before importing more.
+    // Throws a clear diagnostic naming the conflicting FdcIds; never mutates
+    // or deletes the conflicting rows.
+    await DatabaseSeeder.EnsureNoDuplicateFoodIdentitiesAsync(dbContext);
 
     // Seed USDA foods: ưu tiên SeedData cạnh binary (Docker), fallback về source tree (dev)
     var seedFolder = Path.Combine(AppContext.BaseDirectory, "SeedData");
@@ -175,7 +186,9 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         seedFolder = Path.Combine(Directory.GetCurrentDirectory(), "..", "CaloriesTracking.Infrastructure", "Data", "SeedData");
     }
-    await CaloriesTracking.Infrastructure.Data.Seeders.DatabaseSeeder.SeedUsdaFoodsAsync(dbContext, seedFolder);
+
+    var seeder = scope.ServiceProvider.GetRequiredService<UsdaFoodSeeder>();
+    await seeder.SeedAsync(seedFolder, app.Lifetime.ApplicationStopping);
 }
 
 app.UseHttpsRedirection();

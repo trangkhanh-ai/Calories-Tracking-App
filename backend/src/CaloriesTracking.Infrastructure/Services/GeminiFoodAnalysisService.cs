@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Analysis;
+using CaloriesTracking.Application.Exceptions;
 using Microsoft.Extensions.Configuration;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
@@ -11,7 +12,7 @@ namespace CaloriesTracking.Infrastructure.Services;
 
 /// <summary>
 /// Gọi Gemini Vision để phân tích ảnh món ăn. Thay thế proxy Node cũ
-/// (scripts/gemini_proxy.js) — logic nén ảnh và prompt được giữ nguyên.
+/// (đã xóa) — logic nén ảnh và prompt được giữ nguyên.
 /// </summary>
 public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
 {
@@ -154,26 +155,31 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
             var format = Image.DetectFormat(imageBytes);
             if (format == null)
             {
-                throw new ArgumentException("Unknown image format.");
+                throw new ValidationAppException("Unknown image format.");
             }
             var formatName = format.Name.ToLowerInvariant();
             if (formatName != "jpeg" && formatName != "png" && formatName != "webp")
             {
-                throw new NotSupportedException($"Image format {formatName} is not supported.");
+                // Naming the detected format is safe (it comes from the image
+                // header, not user text) and tells the client what to fix.
+                throw new UnsupportedMediaTypeAppException(
+                    $"Image format {formatName} is not supported. Only JPEG, PNG, and WebP are accepted.");
             }
 
             var info = Image.Identify(imageBytes);
             if (info == null)
             {
-                throw new ArgumentException("Not a valid image.");
+                throw new ValidationAppException("Not a valid image.");
             }
+            // Guards against decompression bombs: a small file can still claim
+            // an enormous canvas that would allocate gigabytes on decode.
             if (info.Width > 8000 || info.Height > 8000)
             {
-                throw new InvalidOperationException("Image dimensions exceed 8000x8000.");
+                throw new PayloadTooLargeAppException("Image dimensions exceed 8000x8000.");
             }
             if ((long)info.Width * info.Height > 20_000_000)
             {
-                throw new InvalidOperationException("Image pixel count exceeds 20,000,000.");
+                throw new PayloadTooLargeAppException("Image pixel count exceeds 20,000,000.");
             }
 
             using var image = Image.Load(imageBytes);
@@ -188,7 +194,7 @@ public sealed class GeminiFoodAnalysisService : IFoodAnalysisService
         }
         catch (Exception ex) when (ex is UnknownImageFormatException || ex is InvalidImageContentException)
         {
-            throw new ArgumentException("Invalid image format or content.");
+            throw new ValidationAppException("Invalid image format or content.");
         }
     }
 }

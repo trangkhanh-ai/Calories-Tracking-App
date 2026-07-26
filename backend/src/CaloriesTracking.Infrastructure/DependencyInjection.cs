@@ -1,10 +1,12 @@
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Infrastructure.Data;
+using CaloriesTracking.Infrastructure.Data.Seeders;
 using CaloriesTracking.Infrastructure.Repositories;
 using CaloriesTracking.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
 
@@ -55,10 +57,13 @@ public static class DependencyInjection
                 "Only Development (SQLite) and Production (PostgreSQL) are allowed.");
         }
 
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IUniqueConstraintTranslator, UniqueConstraintTranslator>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IFoodRepository, FoodRepository>();
         services.AddScoped<IDailyLogRepository, DailyLogRepository>();
         services.AddScoped<IAvatarStorageService, FakeAvatarStorageService>();
+        services.AddScoped<UsdaFoodSeeder>();
 
         services.AddGeminiClient();
 

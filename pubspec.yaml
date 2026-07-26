@@ -56,7 +56,8 @@ dependencies:
   flutter_animate: ^4.5.0
   dio: ^5.9.2
   fl_chart: ^0.68.0
-  google_generative_ai: ^0.4.7
+  # google_generative_ai deliberately absent: every Gemini call goes through
+  # the backend (POST /api/analysis/food) so no API key can reach the client.
   cached_network_image: ^3.4.1
   path_provider: ^2.1.6
 

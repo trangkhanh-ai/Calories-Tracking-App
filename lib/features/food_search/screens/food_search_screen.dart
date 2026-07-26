@@ -11,6 +11,7 @@ import '../services/food_search_service.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../diary/models/food_entry.dart';
 import '../../diary/models/diary_dto.dart';
+import '../../diary/services/meal_logger.dart';
 
 class FoodSearchScreen extends ConsumerStatefulWidget {
   const FoodSearchScreen({super.key});
@@ -463,52 +464,58 @@ class _FoodSearchScreenState extends ConsumerState<FoodSearchScreen> {
       builder: (sheetContext) => _AddMealBottomSheet(
         food: food,
         onSave: (quantity, mealType, date) async {
-          Navigator.pop(sheetContext);
-          try {
-            final entry = FoodEntry(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              name: food.name,
-              calories: ((food.calories ?? 0.0) * (quantity / 100)).round(),
-              proteinG: (food.protein ?? 0.0) * (quantity / 100),
-              carbsG: (food.carbs ?? 0.0) * (quantity / 100),
-              fatG: (food.fat ?? 0.0) * (quantity / 100),
-              date: date,
-              mealType: mealType,
-            );
-            await ref.read(localStorageProvider).addEntry(entry);
-            try {
-              final request = LogMealRequest(
-                foodName: food.name,
-                caloriesPer100g: food.calories ?? 0.0,
-                quantity: quantity,
-                mealType: mealType,
-                date: date,
-              );
-              await ref.read(diaryApiServiceProvider).logMeal(request);
-            } catch (_) {
-              // Log meal via API if server available, fallback to local storage
-            }
-            ref.invalidate(dailyDiaryProvider);
-            ref.invalidate(weeklyStatsProvider);
-            if (mounted) {
-              final messenger = ScaffoldMessenger.of(context);
+          final request = LogMealRequest(
+            foodName: food.name,
+            caloriesPer100g: food.calories ?? 0.0,
+            quantity: quantity,
+            mealType: mealType,
+            date: date,
+          );
+
+          final entry = FoodEntry(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            name: food.name,
+            calories: ((food.calories ?? 0.0) * (quantity / 100)).round(),
+            proteinG: (food.protein ?? 0.0) * (quantity / 100),
+            carbsG: (food.carbs ?? 0.0) * (quantity / 100),
+            fatG: (food.fat ?? 0.0) * (quantity / 100),
+            date: date,
+            mealType: mealType,
+          );
+
+          final outcome = await ref
+              .read(mealLoggerProvider)
+              .log(request: request, cacheEntry: entry);
+
+          if (!mounted) return;
+          final messenger = ScaffoldMessenger.of(context);
+
+          switch (outcome) {
+            case LogMealSuccess():
+              // The sheet closes only on success, so a rejected save leaves the
+              // form intact for the user to correct and resubmit.
+              if (sheetContext.mounted) {
+                Navigator.pop(sheetContext);
+              }
+
+              // Refresh from the server rather than trusting the local append.
+              ref.invalidate(dailyDiaryProvider);
+              ref.invalidate(weeklyStatsProvider);
+
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text('${food.name} added to $mealType!'),
+                  content: Text('Đã thêm ${food.name} vào $mealType.'),
                   backgroundColor: AppTheme.primaryDark,
                 ),
               );
-            }
-          } catch (e) {
-            if (mounted) {
-              final messenger = ScaffoldMessenger.of(context);
+
+            case LogMealFailure(:final message):
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text('Failed to add to diary.'),
+                  content: Text(message),
                   backgroundColor: AppTheme.error,
                 ),
               );
-            }
           }
         },
       ),

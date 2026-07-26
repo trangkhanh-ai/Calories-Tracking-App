@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+
 import '../../../core/network/api_client.dart';
 import '../models/diary_dto.dart';
 
@@ -13,8 +14,27 @@ class DiaryApiService {
     return DailyDiaryDto.fromJson(response.data as Map<String, dynamic>?, date: date);
   }
 
-  Future<void> logMeal(LogMealRequest request) async {
-    await _dio.post('/diary', data: request.toJson());
+  /// Logs a meal and returns the server's view of that day, when the backend
+  /// provides one.
+  ///
+  /// `POST /api/diary` now answers `{ message, diary }`. The `diary` field is
+  /// optional here so the client still works against a backend that predates
+  /// that change — callers treat a null result as "saved, state unknown" and
+  /// refresh from the server.
+  Future<DailyDiaryDto?> logMeal(LogMealRequest request) async {
+    final response = await _dio.post('/diary', data: request.toJson());
+
+    final body = response.data;
+    if (body is! Map<String, dynamic>) {
+      return null;
+    }
+
+    final diary = body['diary'];
+    if (diary is! Map<String, dynamic>) {
+      return null;
+    }
+
+    return DailyDiaryDto.fromJson(diary, date: request.date);
   }
 
   Future<List<DailyStatDto>> getStats(DateTime startDate, DateTime endDate) async {

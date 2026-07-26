@@ -39,6 +39,16 @@ public sealed class DailyLogRepository : IDailyLogRepository
         _dbContext.DailyLogs.Add(dailyLog);
     }
 
+    public void Detach(DailyLog dailyLog)
+    {
+        _dbContext.Entry(dailyLog).State = EntityState.Detached;
+    }
+
+    public void ClearChangeTracker()
+    {
+        _dbContext.ChangeTracker.Clear();
+    }
+
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return await _dbContext.SaveChangesAsync(cancellationToken);

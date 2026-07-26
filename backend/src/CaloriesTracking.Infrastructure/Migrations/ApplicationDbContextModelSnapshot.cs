@@ -15,7 +15,7 @@ namespace CaloriesTracking.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "9.0.17");
+            modelBuilder.HasAnnotation("ProductVersion", "9.0.18");
 
             modelBuilder.Entity("CaloriesTracking.Domain.Entities.DailyLog", b =>
                 {
@@ -71,6 +71,11 @@ namespace CaloriesTracking.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<decimal>("Protein")
                         .HasPrecision(10, 2)
                         .HasColumnType("TEXT");
@@ -88,6 +93,16 @@ namespace CaloriesTracking.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FdcId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Foods_FdcId")
+                        .HasFilter("\"FdcId\" IS NOT NULL");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Foods_NormalizedName_Custom")
+                        .HasFilter("\"FdcId\" IS NULL");
 
                     b.ToTable("Foods", (string)null);
                 });
@@ -126,6 +141,63 @@ namespace CaloriesTracking.Infrastructure.Migrations
                     b.ToTable("MealItems", (string)null);
                 });
 
+            modelBuilder.Entity("CaloriesTracking.Domain.Entities.SeedHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ErrorSummary")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LastProcessedSourceRow")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LockExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LockOwner")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProcessedRows")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TotalRows")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SeedHistories_Name_Version");
+
+                    b.ToTable("SeedHistories", (string)null);
+                });
+
             modelBuilder.Entity("CaloriesTracking.Domain.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -160,6 +232,16 @@ namespace CaloriesTracking.Infrastructure.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedUsername")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -181,6 +263,14 @@ namespace CaloriesTracking.Infrastructure.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedEmail");
+
+                    b.HasIndex("NormalizedUsername")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedUsername");
 
                     b.HasIndex("Username")
                         .IsUnique();

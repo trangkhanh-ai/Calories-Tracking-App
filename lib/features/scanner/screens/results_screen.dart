@@ -10,6 +10,7 @@ import '../widgets/macro_card.dart';
 import '../../diary/models/food_entry.dart';
 import '../../diary/models/diary_dto.dart';
 import '../../diary/providers/diary_provider.dart';
+import '../../diary/services/meal_logger.dart';
 import '../../../app/theme.dart';
 import '../../../shared/utils/constants.dart';
 
@@ -103,32 +104,38 @@ class _ResultsScreenState extends ConsumerState<ResultsScreen> {
       imagePath: widget.result.imagePath,
     );
 
-    try {
-      await ref.read(localStorageProvider).addEntry(entry);
+    final request = LogMealRequest(
+      foodName: combinedName,
+      caloriesPer100g: _totalCalories,
+      quantity: 100.0,
+      mealType: mealMap[_selectedMeal] ?? 'Snack',
+      date: DateTime.now(),
+    );
 
-      try {
-        final request = LogMealRequest(
-          foodName: combinedName,
-          caloriesPer100g: _totalCalories,
-          quantity: 100.0,
-          mealType: mealMap[_selectedMeal] ?? 'Snack',
-          date: DateTime.now(),
-        );
-        await ref.read(diaryApiServiceProvider).logMeal(request);
-      } catch (_) {
-        // Fallback to local entry if API fails or offline
-      }
+    // Same server-first contract as the food-search screen: the backend
+    // decides, the local cache only mirrors, and a cache failure after a
+    // successful save is never reported as a failure.
+    final outcome = await ref
+        .read(mealLoggerProvider)
+        .log(request: request, cacheEntry: entry);
 
-      ref.invalidate(dailyDiaryProvider);
-      ref.invalidate(weeklyStatsProvider);
-    } catch (e) {
+    if (outcome is LogMealFailure) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e', style: GoogleFonts.outfit()), backgroundColor: AppTheme.error),
+          SnackBar(
+            content: Text(outcome.message, style: GoogleFonts.outfit()),
+            backgroundColor: AppTheme.error,
+          ),
         );
       }
+      // Stay on the screen so the user can retry deliberately; the POST is
+      // never retried automatically.
       return;
     }
+
+    // Adopt server state rather than trusting the local append.
+    ref.invalidate(dailyDiaryProvider);
+    ref.invalidate(weeklyStatsProvider);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -16,6 +16,12 @@ on:
       - "linux/**"
       - "windows/**"
       - "macos/**"
+      # Release tooling affects the produced bundle, so changes here must be
+      # verified by the same pipeline that builds it.
+      - "vercel.json"
+      - "scripts/vercel-build.sh"
+      - "docs/DEPLOYMENT_GUIDE.md"
+      - "docs/DEPLOY_RENDER.md"
       - ".github/workflows/flutter-ci.yml"
   pull_request:
     branches:
@@ -34,6 +40,10 @@ on:
       - "linux/**"
       - "windows/**"
       - "macos/**"
+      - "vercel.json"
+      - "scripts/vercel-build.sh"
+      - "docs/DEPLOYMENT_GUIDE.md"
+      - "docs/DEPLOY_RENDER.md"
       - ".github/workflows/flutter-ci.yml"
   workflow_dispatch:
 
@@ -43,7 +53,7 @@ permissions:
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -54,6 +64,7 @@ jobs:
         # subosito/flutter-action v2.23.0
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
+          # Must stay in sync with FLUTTER_VERSION in scripts/vercel-build.sh.
           flutter-version: "3.44.1"
           channel: stable
           cache: true
@@ -62,6 +73,14 @@ jobs:
         run: |
           flutter --version
           dart --version
+
+      - name: Validate vercel.json is valid JSON
+        run: python3 -c "import json,sys; json.load(open('vercel.json')); print('vercel.json OK')"
+
+      - name: Validate Vercel build script syntax
+        # Syntax check only — the script is never executed here, because Flutter
+        # is already installed by flutter-action above.
+        run: bash -n scripts/vercel-build.sh
 
       - name: Restore locked dependencies
         run: flutter pub get --enforce-lockfile
@@ -75,5 +94,26 @@ jobs:
       - name: Run Flutter tests
         run: flutter test --reporter expanded
 
+      - name: Build Flutter Web release
+        # Proves the release bundle actually compiles. The example origin is a
+        # placeholder: no real backend is contacted at build time.
+        run: |
+          flutter build web \
+            --release \
+            --base-href / \
+            --dart-define=BACKEND_BASE_URL=https://example.onrender.com
+
       - name: Verify repository did not drift
+        # build/ is gitignored, so a clean tree here proves analysis, tests, and
+        # the build produced no tracked side effects.
         run: git diff --exit-code
+
+      - name: Upload web build for inspection
+        # Inspection artifact only — this is never deployed from CI.
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: web-release-build
+          path: build/web
+          retention-days: 7
+          if-no-files-found: error

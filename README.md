@@ -29,7 +29,7 @@
 - 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. Nhật ký đồng bộ qua Diary API backend (server là source-of-truth).
 - 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA được seed bằng EF Core.
 - 🛡️ **Rate limiting** — endpoint phân tích ảnh, đăng ký, đăng nhập và tìm kiếm đều có rate limit per-IP hoặc per-user.
-- 🚀 **CI/CD** — GitHub Actions tự build Flutter Web và deploy GitHub Pages khi push `main`.
+- 🚀 **CI/CD** — GitHub Actions chạy analyze, test và build Flutter Web release trên mỗi PR; Vercel deploy frontend, Render deploy backend.
 
 ## 🔮 Planned / Future improvements
 
@@ -56,7 +56,7 @@
 ```
 
 - Toàn bộ lời gọi Gemini đi qua backend (`POST /api/analysis/food`, yêu cầu JWT). API key chỉ tồn tại trong biến môi trường server.
-- `scripts/gemini_proxy.js` (proxy Node cũ) **đã deprecated**, giữ tạm để tham khảo — sẽ xóa.
+- Proxy Node cũ (`scripts/gemini_proxy.js`) **đã bị xóa**. Toàn bộ lời gọi Gemini nay chỉ đi qua backend .NET.
 
 Cấu trúc Flutter (Feature-First):
 
@@ -126,21 +126,30 @@ Repository có [render.yaml](render.yaml) để tạo đúng một Docker Web Se
 |---|---|
 | `JWT__KEY` | Chuỗi bí mật ≥ 32 ký tự (app từ chối chạy nếu thiếu) |
 | `GEMINI__APIKEY` | Gemini API key |
-| `CORS__ALLOWEDORIGINS__0` | Origin GitHub Pages dạng `https://<owner>.github.io`, không có path hoặc dấu `/` cuối |
+| `CORS__ALLOWEDORIGINS__0` | Origin Vercel dạng `https://<tên-project>.vercel.app`, không có path hoặc dấu `/` cuối |
 | `ConnectionStrings__DefaultConnection` | Neon PostgreSQL URI có `sslmode=require&channel_binding=require` |
 
 Hướng dẫn đầy đủ: [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md). Render dùng `GET /health` để kiểm tra database readiness; `GET /health/live` chỉ kiểm tra process liveness.
 
-### Frontend → GitHub Pages
-Workflow [.github/workflows/deploy.yml](.github/workflows/deploy.yml) tự chạy khi push `main`. Đặt **Repository Variable** `BACKEND_BASE_URL` (Settings → Secrets and variables → Actions → Variables) bằng origin HTTPS của Render, không có `/api` hoặc dấu `/` cuối. Workflow sẽ dừng nếu biến thiếu, dùng HTTP hoặc trỏ về loopback.
+### Frontend → Vercel
+
+Vercel là nền tảng deploy frontend duy nhất. Import repository, giữ **Root Directory** ở gốc repo (dự án Flutter nằm ở gốc), rồi đặt Environment Variable:
+
+```text
+BACKEND_BASE_URL=https://<service-name>.onrender.com
+```
+
+Không thêm `/api`, path, query hay dấu `/` cuối. [scripts/vercel-build.sh](scripts/vercel-build.sh) sẽ dừng build nếu giá trị thiếu, không phải HTTPS, có path/credentials, hoặc trỏ về loopback. Flutter SDK được pin cứng ở `3.44.1` để build có thể tái lập.
 
 Build tay:
 ```bash
-flutter build web --release --base-href "/Calories-Tracking-App/" \
+flutter build web --release --base-href / \
   --dart-define=BACKEND_BASE_URL=https://calories-api.onrender.com
 ```
 
-Sau khi deploy, phải kiểm tra URL Render thật, `GET /health`, CORS và URL GitHub Pages trước khi tuyên bố hệ thống đã hoạt động production.
+> Workflow [.github/workflows/deploy.yml](.github/workflows/deploy.yml) (GitHub Pages) **đã deprecated** và chỉ còn chạy thủ công qua `workflow_dispatch`. Hai đường deploy frontend song song sẽ cần hai origin CORS, trong khi `render.yaml` chỉ khai báo `CORS__ALLOWEDORIGINS__0`.
+
+Sau khi deploy, phải kiểm tra URL Render thật, `GET /health`, CORS preflight và URL Vercel (kể cả deep-link như `/goal-setup`) trước khi tuyên bố hệ thống đã hoạt động production. Checklist smoke test đầy đủ: [docs/DEPLOYMENT_GUIDE.md §5](docs/DEPLOYMENT_GUIDE.md).
 
 ---
 

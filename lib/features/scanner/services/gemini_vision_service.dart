@@ -5,91 +5,114 @@ import 'package:cross_file/cross_file.dart';
 import 'package:dio/dio.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/network/network_failure.dart';
 import '../models/food_analysis_result.dart';
 
 /// Gửi ảnh món ăn lên backend (.NET) để phân tích dinh dưỡng.
 /// Backend giữ Gemini API key và gọi Gemini Vision — client không giữ secret nào.
+///
+/// There is no direct Gemini SDK usage anywhere in the app: every analysis goes
+/// through `POST /api/analysis/food`, which is why `google_generative_ai` has
+/// been removed from pubspec.
 class GeminiVisionService {
   static const _analyzePath = '/analysis/food';
+
+  /// Analysis is slower than a normal request (image upload plus model
+  /// inference), so it carries its own deadline rather than the client default.
   static const _receiveTimeout = Duration(seconds: 60);
 
-  final Dio _dio;
+  /// Attempts for transient failures only: 1 original + 2 retries.
+  static const defaultMaxAttempts = 3;
 
-  GeminiVisionService({Dio? dio}) : _dio = dio ?? apiClient;
+  final Dio _dio;
+  final Future<void> Function(Duration) _delay;
+
+  GeminiVisionService({
+    Dio? dio,
+    Future<void> Function(Duration)? delay,
+  })  : _dio = dio ?? apiClient,
+        _delay = delay ?? _realDelay;
+
+  static Future<void> _realDelay(Duration duration) => Future<void>.delayed(duration);
 
   Future<FoodAnalysisResult> analyzeImage(
     String imagePath, {
-    int maxRetries = 3,
+    int maxAttempts = defaultMaxAttempts,
+    CancelToken? cancelToken,
   }) async {
     final bytes = await XFile(imagePath).readAsBytes();
-    return analyzeImageBytes(bytes, imagePath, maxRetries: maxRetries);
+    return analyzeImageBytes(
+      bytes,
+      imagePath,
+      maxAttempts: maxAttempts,
+      cancelToken: cancelToken,
+    );
   }
 
+  /// Analyses an image, retrying only genuinely transient failures.
+  ///
+  /// Never retried: 400, 401, 413, 415, 429, an explicit cancellation, or a
+  /// successful response whose body is malformed. Retrying any of those wastes
+  /// the user's rate-limit budget without changing the outcome.
   Future<FoodAnalysisResult> analyzeImageBytes(
     Uint8List imageBytes,
     String imagePath, {
-    int maxRetries = 3,
+    int maxAttempts = defaultMaxAttempts,
+    CancelToken? cancelToken,
   }) async {
     final base64Image = base64Encode(imageBytes);
+    final attempts = maxAttempts < 1 ? 1 : maxAttempts;
 
-    Exception? lastError;
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+    NetworkFailure? lastFailure;
+
+    for (var attempt = 1; attempt <= attempts; attempt++) {
       try {
-        return await _callBackend(base64Image, imagePath);
-      } on DioException catch (e) {
-        final statusCode = e.response?.statusCode;
-        if (statusCode == 401) {
-          throw Exception('Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.');
-        }
-        if (statusCode == 413) {
-          throw Exception('Kích thước ảnh quá lớn (>20MB). Vui lòng chọn hoặc chụp ảnh nhỏ hơn.');
-        }
-        if (statusCode == 429) {
-          throw Exception('Đã đạt giới hạn phân tích (5 lần/phút). Vui lòng chờ 1 phút và thử lại.');
-        }
-        if (statusCode == 400) {
-          final detail = e.response?.data is Map
-              ? (e.response?.data['detail'] ?? e.response?.data['message'])
-              : null;
-          throw Exception(detail != null
-              ? 'Lỗi dữ liệu: $detail'
-              : 'Ảnh không hợp lệ hoặc không chứa thực phẩm. Vui lòng chọn ảnh khác.');
+        return await _callBackend(base64Image, imagePath, cancelToken);
+      } on DioException catch (error) {
+        final failure = NetworkFailure.fromDioException(error);
+
+        // Terminal outcomes surface immediately.
+        if (!failure.isRetryable) {
+          throw failure;
         }
 
-        if (statusCode != null && statusCode >= 500) {
-          lastError = Exception('Dịch vụ AI bận hoặc gặp sự cố tạm thời (Mã $statusCode). Vui lòng thử lại sau.');
-        } else {
-          lastError = Exception('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
-        }
+        lastFailure = failure;
 
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(seconds: attempt * 2));
-        }
-      } catch (e) {
-        lastError = Exception('Lỗi phân tích: $e');
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(seconds: attempt * 2));
+        if (attempt < attempts) {
+          // Linear backoff: 1s, then 2s.
+          await _delay(Duration(seconds: attempt));
         }
       }
     }
 
-    throw lastError ?? Exception('Không thể phân tích ảnh sau $maxRetries lần thử');
+    throw lastFailure ?? ServerFailure();
   }
 
   Future<FoodAnalysisResult> _callBackend(
     String base64Image,
     String imagePath,
+    CancelToken? cancelToken,
   ) async {
     final response = await _dio.post(
       _analyzePath,
       data: {'imageBase64': base64Image},
       options: Options(receiveTimeout: _receiveTimeout),
+      cancelToken: cancelToken,
     );
 
     final data = response.data;
-    final parsed = data is Map<String, dynamic>
-        ? data
-        : jsonDecode(data as String) as Map<String, dynamic>;
-    return FoodAnalysisResult.fromJson(parsed, imagePath);
+
+    // A 200 with an unusable body is a contract violation, not a transient
+    // fault — deliberately thrown outside the retry branch above.
+    try {
+      final parsed = data is Map<String, dynamic>
+          ? data
+          : jsonDecode(data as String) as Map<String, dynamic>;
+      return FoodAnalysisResult.fromJson(parsed, imagePath);
+    } on FormatException {
+      throw ServerFailure();
+    } on TypeError {
+      throw ServerFailure();
+    }
   }
 }

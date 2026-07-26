@@ -103,7 +103,7 @@ Chọn **code là chuẩn** (vì proxy + model + prompt đều đã thống nh�
   - Key đọc từ config `Gemini:ApiKey` (env var `GEMINI__APIKEY`).
   - Trả về đúng schema `FoodAnalysisResult` đã chốt ở 3.2.
 - Thêm `IGeminiService` vào tầng Application, implementation ở Infrastructure (đúng kiến trúc hiện có).
-- Giữ `scripts/gemini_proxy.js` thêm một thời gian làm fallback dev, đánh dấu deprecated trong README, xóa sau khi backend chạy ổn.
+- ~~Giữ `scripts/gemini_proxy.js` làm fallback dev~~ → **Đã hoàn tất**: proxy Node đã bị xóa sau khi backend .NET chạy ổn định.
 
 ### 4.2. Calorie Calculator + Activity Level ở backend
 - Thêm vào `User` entity: `ActivityLevel` (string/enum) — migration mới.

@@ -1,23 +1,38 @@
 using CaloriesTracking.Application.Abstractions;
 using CaloriesTracking.Application.Dtos.Diary;
+using CaloriesTracking.Application.Exceptions;
+using CaloriesTracking.Application.Validation;
 using CaloriesTracking.Domain.Entities;
 
 namespace CaloriesTracking.Application.Services;
 
 public sealed class DiaryService : IDiaryService
 {
+    /// <summary>
+    /// Attempts for the whole log-meal unit of work. Two concurrent writers can
+    /// make each other lose exactly once; a third attempt means something other
+    /// than contention is wrong, so the request fails rather than spinning.
+    /// </summary>
+    private const int MaxConcurrencyAttempts = 3;
+
     private readonly IDailyLogRepository _dailyLogRepository;
     private readonly IFoodRepository _foodRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IUniqueConstraintTranslator _constraintTranslator;
+    private readonly TimeProvider _timeProvider;
 
     public DiaryService(
         IDailyLogRepository dailyLogRepository,
         IFoodRepository foodRepository,
-        IUserRepository userRepository)
+        IUserRepository userRepository,
+        IUniqueConstraintTranslator constraintTranslator,
+        TimeProvider timeProvider)
     {
         _dailyLogRepository = dailyLogRepository;
         _foodRepository = foodRepository;
         _userRepository = userRepository;
+        _constraintTranslator = constraintTranslator;
+        _timeProvider = timeProvider;
     }
 
     public async Task<DailyDiaryDto> GetDailyDiaryAsync(int userId, DateTime date, CancellationToken cancellationToken = default)
@@ -25,7 +40,6 @@ public sealed class DiaryService : IDiaryService
         var dailyLog = await _dailyLogRepository.GetDailyLogAsync(userId, date, cancellationToken);
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
 
-        // Calculate Target Calories
         decimal targetCalories = user?.TargetCalories ?? 2000;
         if (user != null && user.TargetCalories == null && user.Weight > 0 && user.Height > 0 && user.Age > 0)
         {
@@ -63,43 +77,47 @@ public sealed class DiaryService : IDiaryService
             mealItems.Where(m => m.MealType == "Snack").ToList());
     }
 
-    public async Task LogMealAsync(int userId, LogMealRequest request, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Persists a meal and returns the resulting diary for the day, so the
+    /// client can adopt the server state instead of inventing a local row.
+    /// </summary>
+    public async Task<DailyDiaryDto> LogMealAsync(int userId, LogMealRequest request, CancellationToken cancellationToken = default)
     {
-        await _dailyLogRepository.ExecuteInTransactionAsync(async () =>
+        // The service validates independently of the controller so it stays
+        // safe when called from tests or any future transport.
+        var validated = DiaryValidationRules.ValidateLogMeal(request, _timeProvider.GetUtcNow().UtcDateTime);
+
+        for (var attempt = 1; ; attempt++)
         {
-            await ExecuteLogMealInternalAsync(userId, request, cancellationToken);
-        }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await _dailyLogRepository.ExecuteInTransactionAsync(
+                    () => ExecuteLogMealInternalAsync(userId, validated, cancellationToken),
+                    cancellationToken);
+
+                break;
+            }
+            catch (Exception exception) when (
+                attempt < MaxConcurrencyAttempts &&
+                !cancellationToken.IsCancellationRequested &&
+                _constraintTranslator.IsUniqueViolation(exception))
+            {
+                // A peer created the same DailyLog or custom Food between our
+                // read and our write. The transaction already rolled back, so
+                // nothing partial survives — clear the tracker and re-read.
+                _dailyLogRepository.ClearChangeTracker();
+            }
+        }
+
+        return await GetDailyDiaryAsync(userId, validated.Date, cancellationToken);
     }
 
     private async Task ExecuteLogMealInternalAsync(int userId, LogMealRequest request, CancellationToken cancellationToken)
     {
-        var food = await _foodRepository.GetByNameAsync(request.FoodName, cancellationToken);
-        if (food == null)
-        {
-            food = new Food
-            {
-                Name = request.FoodName,
-                CaloriesPer100g = request.CaloriesPer100g,
-                Protein = 0,
-                Carbs = 0,
-                Fat = 0
-            };
-            _foodRepository.Add(food);
-            await _dailyLogRepository.SaveChangesAsync(cancellationToken);
-        }
-
-        var dailyLog = await _dailyLogRepository.GetDailyLogAsync(userId, request.Date, cancellationToken);
-        if (dailyLog == null)
-        {
-            dailyLog = new DailyLog
-            {
-                UserId = userId,
-                Date = DateOnly.FromDateTime(request.Date.Date),
-                TotalCaloriesConsumed = 0,
-                MealItems = new List<MealItem>()
-            };
-            _dailyLogRepository.Add(dailyLog);
-        }
+        var food = await ResolveFoodAsync(request, cancellationToken);
+        var dailyLog = await ResolveDailyLogAsync(userId, request.Date, cancellationToken);
 
         decimal calories = food.CaloriesPer100g * request.Quantity / 100m;
 
@@ -113,19 +131,106 @@ public sealed class DiaryService : IDiaryService
 
         dailyLog.TotalCaloriesConsumed += calories;
 
+        // Single commit for the MealItem and the running total. If it throws,
+        // the surrounding transaction rolls back the Food and DailyLog inserts
+        // too, so no orphan MealItem and no partially-created Food remain.
         await _dailyLogRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<Food> ResolveFoodAsync(LogMealRequest request, CancellationToken cancellationToken)
+    {
+        var normalizedName = AuthValidationRules.Normalize(request.FoodName);
+
+        var existing = await _foodRepository.GetByNameAsync(request.FoodName, cancellationToken)
+            ?? await _foodRepository.GetCustomByNormalizedNameAsync(normalizedName, cancellationToken);
+
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var food = new Food
+        {
+            Name = request.FoodName,
+            NormalizedName = normalizedName,
+            CaloriesPer100g = request.CaloriesPer100g,
+            Protein = 0,
+            Carbs = 0,
+            Fat = 0
+        };
+
+        _foodRepository.Add(food);
+
+        try
+        {
+            await _dailyLogRepository.SaveChangesAsync(cancellationToken);
+            return food;
+        }
+        catch (Exception exception) when (_constraintTranslator.IsUniqueViolation(exception))
+        {
+            // Concurrent insert of the same custom food won the partial unique
+            // index. Adopt the winner rather than duplicating it.
+            _foodRepository.Detach(food);
+
+            return await _foodRepository.GetCustomByNormalizedNameAsync(normalizedName, cancellationToken)
+                ?? throw new ConflictAppException(
+                    "The food record could not be resolved after a concurrent update.");
+        }
+    }
+
+    private async Task<DailyLog> ResolveDailyLogAsync(int userId, DateTime date, CancellationToken cancellationToken)
+    {
+        var existing = await _dailyLogRepository.GetDailyLogAsync(userId, date, cancellationToken);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var dailyLog = new DailyLog
+        {
+            UserId = userId,
+            Date = DateOnly.FromDateTime(date.Date),
+            TotalCaloriesConsumed = 0,
+            MealItems = new List<MealItem>()
+        };
+
+        _dailyLogRepository.Add(dailyLog);
+
+        try
+        {
+            await _dailyLogRepository.SaveChangesAsync(cancellationToken);
+            return dailyLog;
+        }
+        catch (Exception exception) when (_constraintTranslator.IsUniqueViolation(exception))
+        {
+            // The (UserId, Date) unique index rejected us — a peer created the
+            // log first. Reload theirs; never insert a duplicate row.
+            _dailyLogRepository.Detach(dailyLog);
+
+            return await _dailyLogRepository.GetDailyLogAsync(userId, date, cancellationToken)
+                ?? throw new ConflictAppException(
+                    "The daily log could not be resolved after a concurrent update.");
+        }
     }
 
     public async Task<IReadOnlyList<DailyStatDto>> GetStatsAsync(int userId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
     {
+        // Validated here as well as in the controller: an unbounded range would
+        // otherwise drive the day loop below for millions of iterations.
+        DiaryValidationRules.ValidateStatsRange(startDate, endDate);
+
         var logs = await _dailyLogRepository.GetStatsAsync(userId, startDate, endDate, cancellationToken);
-        
+        var totalsByDate = logs
+            .GroupBy(l => l.Date)
+            .ToDictionary(g => g.Key, g => g.Sum(l => l.TotalCaloriesConsumed));
+
         var stats = new List<DailyStatDto>();
         for (var d = startDate.Date; d <= endDate.Date; d = d.AddDays(1))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var dateOnly = DateOnly.FromDateTime(d);
-            var log = logs.FirstOrDefault(l => l.Date == dateOnly);
-            stats.Add(new DailyStatDto(d, log?.TotalCaloriesConsumed ?? 0));
+            stats.Add(new DailyStatDto(d, totalsByDate.GetValueOrDefault(dateOnly)));
         }
 
         return stats;

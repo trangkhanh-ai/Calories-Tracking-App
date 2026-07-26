@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using CaloriesTracking.Application.Abstractions;
+using CaloriesTracking.Application.Exceptions;
 using CaloriesTracking.Infrastructure.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,57 +37,57 @@ public class ImageValidationTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithTextFile_ThrowsArgumentException()
+    public async Task AnalyzeAsync_WithTextFile_ThrowsValidationAppException()
     {
         var bytes = System.Text.Encoding.UTF8.GetBytes("This is not an image");
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<ValidationAppException>(() =>
             _service.AnalyzeAsync(bytes));
 
         Assert.Contains("Invalid image format or content.", ex.Message);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithBmp_ThrowsNotSupportedException()
+    public async Task AnalyzeAsync_WithBmp_ThrowsUnsupportedMediaTypeAppException()
     {
         using var image = new Image<Rgba32>(10, 10);
         using var ms = new MemoryStream();
         image.SaveAsBmp(ms);
 
-        var ex = await Assert.ThrowsAsync<NotSupportedException>(() => _service.AnalyzeAsync(ms.ToArray()));
-        Assert.Contains("bmp is not supported", ex.Message);
+        var ex = await Assert.ThrowsAsync<UnsupportedMediaTypeAppException>(() => _service.AnalyzeAsync(ms.ToArray()));
+        Assert.Contains("bmp is not supported", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithOver8000Width_ThrowsInvalidOperationException()
+    public async Task AnalyzeAsync_WithOver8000Width_ThrowsPayloadTooLargeAppException()
     {
         using var image = new Image<Rgba32>(8001, 10);
         using var ms = new MemoryStream();
         image.SaveAsJpeg(ms);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var ex = await Assert.ThrowsAsync<PayloadTooLargeAppException>(() => _service.AnalyzeAsync(ms.ToArray()));
         Assert.Contains("exceed 8000x8000", ex.Message);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithOver8000Height_ThrowsInvalidOperationException()
+    public async Task AnalyzeAsync_WithOver8000Height_ThrowsPayloadTooLargeAppException()
     {
         using var image = new Image<Rgba32>(10, 8001);
         using var ms = new MemoryStream();
         image.SaveAsJpeg(ms);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var ex = await Assert.ThrowsAsync<PayloadTooLargeAppException>(() => _service.AnalyzeAsync(ms.ToArray()));
         Assert.Contains("exceed 8000x8000", ex.Message);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_WithOver20MillionPixels_ThrowsInvalidOperationException()
+    public async Task AnalyzeAsync_WithOver20MillionPixels_ThrowsPayloadTooLargeAppException()
     {
         using var image = new Image<Rgba32>(5000, 4001); // 20,005,000 pixels
         using var ms = new MemoryStream();
         image.SaveAsJpeg(ms);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AnalyzeAsync(ms.ToArray()));
+        var ex = await Assert.ThrowsAsync<PayloadTooLargeAppException>(() => _service.AnalyzeAsync(ms.ToArray()));
         Assert.Contains("exceeds 20,000,000", ex.Message);
     }
 

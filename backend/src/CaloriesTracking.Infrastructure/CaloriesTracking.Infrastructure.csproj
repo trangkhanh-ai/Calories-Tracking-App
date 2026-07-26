@@ -28,4 +28,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Exposes the seeder's AfterBatchCommitted test seam so interruption and
+         resume can be triggered at an exact checkpoint instead of by sleeping. -->
+    <InternalsVisibleTo Include="CaloriesTracking.Api.Tests" />
+  </ItemGroup>
+
 </Project>

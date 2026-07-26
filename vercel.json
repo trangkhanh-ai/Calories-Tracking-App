@@ -1,10 +1,11 @@
 {
-  "version": 2,
-  "buildCommand": "flutter build web --release --dart-define=BACKEND_BASE_URL=$BACKEND_BASE_URL",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "build/web",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "_comment": "SPA fallback for deep links (/login, /profile, /diary, /goal-setup, /results). The negative lookahead excludes anything with a file extension so real assets are served before the fallback rather than being rewritten to index.html.",
+      "source": "/((?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ],
@@ -12,32 +13,29 @@
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-XSS-Protection",
-          "value": "1; mode=block"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        }
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     },
     {
+      "_comment": "Entry points must revalidate, otherwise a cached index.html keeps pointing at a deleted build.",
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/(flutter_service_worker.js|flutter_bootstrap.js|main.dart.js|version.json|manifest.json)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "_comment": "CanvasKit ships under a version-pinned path, so immutable is safe here.",
+      "source": "/canvaskit/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "_comment": "Flutter asset filenames are NOT content-hashed, so a one-year immutable cache would pin users to stale assets across deploys. Short TTL with revalidation instead.",
       "source": "/assets/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" }]
     }
   ]
 }

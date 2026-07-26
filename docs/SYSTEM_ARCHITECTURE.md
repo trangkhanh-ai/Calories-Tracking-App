@@ -387,6 +387,6 @@ flowchart LR
 ```
 
 > [!IMPORTANT]
-> **Bảo mật**: Tính năng Scanner (Quét ảnh AI) gọi qua **endpoint `POST /api/analysis/food` của Backend .NET** (yêu cầu JWT) thay vì gọi trực tiếp Google Gemini API. Backend đính kèm Gemini key đọc từ user-secrets (dev) hoặc biến môi trường `GEMINI__APIKEY` (production). Client Flutter **không giữ bất kỳ secret nào** — mọi thứ đưa vào Flutter Web đều đọc được từ bundle JS. Proxy Node cũ (`scripts/gemini_proxy.js`) đã deprecated.
+> **Bảo mật**: Tính năng Scanner (Quét ảnh AI) gọi qua **endpoint `POST /api/analysis/food` của Backend .NET** (yêu cầu JWT) thay vì gọi trực tiếp Google Gemini API. Backend đính kèm Gemini key đọc từ user-secrets (dev) hoặc biến môi trường `GEMINI__APIKEY` (production). Client Flutter **không giữ bất kỳ secret nào** — mọi thứ đưa vào Flutter Web đều đọc được từ bundle JS. Proxy Node cũ (`scripts/gemini_proxy.js`) đã bị xóa khỏi repository.
 >
 > **Ghi chú diary**: các bữa ăn hiện lưu local (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Backend Diary API có sẵn nhưng client chưa nối (planned).
