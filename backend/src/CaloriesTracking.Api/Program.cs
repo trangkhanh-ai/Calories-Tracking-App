@@ -7,6 +7,7 @@ using CaloriesTracking.Infrastructure;
 using CaloriesTracking.Infrastructure.Data;
 using CaloriesTracking.Infrastructure.Data.Seeders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -19,6 +20,28 @@ ProductionConfigurationValidator.Validate(
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+builder.Services.AddOptions<ForwardedHeadersOptions>()
+    .Configure<IConfiguration>((options, configuration) =>
+    {
+        var behindProxy = configuration.GetValue<bool>(
+            $"{HostingOptions.SectionName}:{nameof(HostingOptions.BehindTlsTerminatingProxy)}");
+        if (!behindProxy)
+        {
+            return;
+        }
+
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor |
+            ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+
+        // Render does not publish stable immediate-proxy CIDRs. Trusting the
+        // direct peer is therefore restricted to the explicit Render-style
+        // proxy mode and bounded to one forwarded hop.
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
 
 // CORS: chỉ cho phép các origin trong cấu hình (Cors:AllowedOrigins / env CORS__ALLOWEDORIGINS__0...)
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -144,6 +167,8 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+var behindTlsTerminatingProxy = app.Configuration.GetValue<bool>(
+    $"{HostingOptions.SectionName}:{nameof(HostingOptions.BehindTlsTerminatingProxy)}");
 
 // Fail-fast: validate JWT key from the *final* configuration (after all
 // overlays — including WebApplicationFactory test overrides — are applied).
@@ -157,6 +182,16 @@ if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
 }
 
 app.UseExceptionHandler();
+
+if (behindTlsTerminatingProxy)
+{
+    app.UseForwardedHeaders();
+}
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -191,7 +226,10 @@ await using (var scope = app.Services.CreateAsyncScope())
     await seeder.SeedAsync(seedFolder, app.Lifetime.ApplicationStopping);
 }
 
-app.UseHttpsRedirection();
+if (!behindTlsTerminatingProxy)
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
