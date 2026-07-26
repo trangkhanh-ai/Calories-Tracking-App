@@ -74,6 +74,10 @@ SECTION_HEADER = re.compile(
     r"^(?P<indent>\s*)[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*(?:\{\s*)?(?:#.*)?$",
     re.IGNORECASE,
 )
+SECTION_OBJECT_START = re.compile(
+    r"^(?P<indent>\s*)(?P<outer>\{\s*)?[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*\{",
+    re.IGNORECASE,
+)
 EXPLICIT_PLACEHOLDER = re.compile(
     rf"(?:<[^<>\r\n]+>|{SHELL_PLACEHOLDER}|{GITHUB_PLACEHOLDER}|\.\.\.|redacted)",
     re.IGNORECASE,
@@ -315,13 +319,13 @@ def scan(repo: Path) -> list[Finding]:
                     direct_child_indent = None
                     awaiting_open_brace = False
 
-            header_match = SECTION_HEADER.match(line)
-            if header_match:
-                nested_section = header_match.group("section").lower()
-                section_indent = len(header_match.group("indent"))
+            section_match = SECTION_HEADER.match(line) or SECTION_OBJECT_START.match(line)
+            if section_match:
+                nested_section = section_match.group("section").lower()
+                section_indent = len(section_match.group("indent"))
                 direct_child_indent = None
                 if opening_braces:
-                    section_brace_depth = brace_depth + 1
+                    section_brace_depth = brace_depth + (2 if section_match.groupdict().get("outer") else 1)
                     awaiting_open_brace = False
                 else:
                     section_brace_depth = None
@@ -329,7 +333,7 @@ def scan(repo: Path) -> list[Finding]:
 
             is_section_content = (
                 nested_section
-                and not header_match
+                and not section_match
                 and not is_comment_or_blank
                 and indentation > section_indent
                 and stripped not in {"{", "}", "},"}

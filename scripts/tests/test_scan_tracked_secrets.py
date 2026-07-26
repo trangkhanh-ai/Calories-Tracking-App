@@ -274,6 +274,34 @@ class ScannerTests(unittest.TestCase):
         for raw_secret in (json_direct_jwt, json_inline_gemini, yaml_direct_jwt):
             self.assertNotIn(raw_secret, result.stdout)
 
+    def test_tracks_direct_keys_after_inline_section_properties(self) -> None:
+        jwt = "inline-property-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "inline-property-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "inline-properties.json",
+            '{"Jwt": {"Issuer": "issuer",\n'
+            f'  "Key": "{jwt}"\n'
+            "},\n"
+            '"Gemini": {"Model": "gemini-2.5-flash",\n'
+            f'  "ApiKey": "{gemini}"\n'
+            "}\n"
+            "}\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY inline-properties.json:2 [REDACTED]",
+                "GEMINI_API_KEY inline-properties.json:5 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
     def test_whitespace_suffix_after_placeholder_is_detected_for_assignments_and_nested_key(self) -> None:
         password = "Password=${JWT_KEY} known-fallback"  # secret-scan: test-fixture
         jwt = "JWT__KEY=${{ secrets.JWT_KEY }} known-fallback"  # secret-scan: test-fixture
