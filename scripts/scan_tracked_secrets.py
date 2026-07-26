@@ -33,16 +33,14 @@ PLACEHOLDER_WITH_SUFFIX = (
 PASSWORD_PLACEHOLDER_WITH_SUFFIX = (
     rf"(?:{GITHUB_PLACEHOLDER}|{SHELL_PLACEHOLDER})[ \t]+[^\s;\"'#]+"
 )
-GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s\"'#]*"
-PASSWORD_GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s;\"'#]*"
-PLACEHOLDER_VALUE = PLACEHOLDER_WITH_SUFFIX + r"|" + GITHUB_VALUE + r"|[^\s\"'#]+"
-YAML_GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s\"']*"
-YAML_VALUE = PLACEHOLDER_WITH_SUFFIX + r"|" + YAML_GITHUB_VALUE + r"|[^\s\"']+"
+GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s\"']*"
+PASSWORD_GITHUB_VALUE = GITHUB_PLACEHOLDER + r"[^\s;\"']*"
+PLACEHOLDER_VALUE = PLACEHOLDER_WITH_SUFFIX + r"|" + GITHUB_VALUE + r"|[^\s\"']+"
 PASSWORD_VALUE = (
     PASSWORD_PLACEHOLDER_WITH_SUFFIX
     + r"|"
     + PASSWORD_GITHUB_VALUE
-    + r"|[^\s;\"'#]+"
+    + r"|[^\s;\"']+"
 )
 JWT_KEY = re.compile(
     rf"(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
@@ -50,14 +48,6 @@ JWT_KEY = re.compile(
 )
 GEMINI_API_KEY = re.compile(
     rf"(?:Gemini:ApiKey|GEMINI__APIKEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
-    re.IGNORECASE,
-)
-YAML_JWT_KEY = re.compile(
-    rf"(?:Jwt:Key|JWT__KEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{YAML_VALUE})",
-    re.IGNORECASE,
-)
-YAML_GEMINI_API_KEY = re.compile(
-    rf"(?:Gemini:ApiKey|GEMINI__APIKEY)[\"']?\s*[:=]\s*[\"']?(?P<value>{YAML_VALUE})",
     re.IGNORECASE,
 )
 PASSWORD = re.compile(
@@ -70,34 +60,6 @@ JWT_NESTED = re.compile(
 )
 GEMINI_NESTED = re.compile(
     rf"[\"']?Gemini[\"']?\s*:\s*\{{[^\r\n{{}}]*?[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
-    re.IGNORECASE,
-)
-YAML_JWT_NESTED = re.compile(
-    rf"[\"']?Jwt[\"']?\s*:\s*\{{[^\r\n{{}}]*?[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{YAML_VALUE})",
-    re.IGNORECASE,
-)
-YAML_GEMINI_NESTED = re.compile(
-    rf"[\"']?Gemini[\"']?\s*:\s*\{{[^\r\n{{}}]*?[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{YAML_VALUE})",
-    re.IGNORECASE,
-)
-JWT_CHILD = re.compile(
-    rf"^\s*[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
-    re.IGNORECASE,
-)
-GEMINI_CHILD = re.compile(
-    rf"^\s*[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{PLACEHOLDER_VALUE})",
-    re.IGNORECASE,
-)
-YAML_JWT_CHILD = re.compile(
-    rf"^\s*[\"']?Key[\"']?\s*:\s*[\"']?(?P<value>{YAML_VALUE})",
-    re.IGNORECASE,
-)
-YAML_GEMINI_CHILD = re.compile(
-    rf"^\s*[\"']?ApiKey[\"']?\s*:\s*[\"']?(?P<value>{YAML_VALUE})",
-    re.IGNORECASE,
-)
-YAML_SECTION_HEADER = re.compile(
-    r"^(?P<indent>\s*)[\"']?(?P<section>Jwt|Gemini)[\"']?\s*:\s*(?:#.*)?$",
     re.IGNORECASE,
 )
 EXPLICIT_PLACEHOLDER = re.compile(
@@ -129,27 +91,13 @@ class JsonToken:
     line: int
 
 
-@dataclass(frozen=True)
-class YamlFlowToken:
-    kind: str
-    value: str
-    line: int
-
-
-@dataclass
-class YamlSectionState:
-    section: str
-    indent: int
-    direct_child_indent: int | None = None
-
-
 class JsonParseError(ValueError):
     def __init__(self, message: str, line: int) -> None:
         super().__init__(message)
         self.line = line
 
 
-class YamlFlowParseError(ValueError):
+class YamlAstError(ValueError):
     def __init__(self, message: str, line: int) -> None:
         super().__init__(message)
         self.line = line
@@ -439,244 +387,140 @@ def scan_json_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
         return [], 0
 
 
-def tokenize_yaml_flow(text: str) -> list[YamlFlowToken]:
-    tokens: list[YamlFlowToken] = []
-    index = 0
-    line = 1
-    length = len(text)
-    escape_values = {
-        '"': '"',
-        "\\": "\\",
-        "/": "/",
-        "b": "\b",
-        "f": "\f",
-        "n": "\n",
-        "r": "\r",
-        "t": "\t",
-    }
+def scan_yaml_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
+    try:
+        import yaml
+        from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+    except Exception:
+        return [], 0
 
-    while index < length:
-        character = text[index]
-        if character.isspace():
-            if character == "\n":
-                line += 1
-            index += 1
-            continue
-        if character == "#" and (index == 0 or text[index - 1].isspace()):
-            while index < length and text[index] not in "\r\n":
-                index += 1
-            continue
-        if text.startswith("${{", index):
-            placeholder_end = text.find("}}", index + 3)
-            if placeholder_end != -1:
-                tokens.append(
-                    YamlFlowToken("scalar", text[index : placeholder_end + 2], line)
-                )
-                index = placeholder_end + 2
-                continue
-        if text.startswith("${", index):
-            placeholder_end = text.find("}", index + 2)
-            if placeholder_end != -1:
-                tokens.append(
-                    YamlFlowToken("scalar", text[index : placeholder_end + 1], line)
-                )
-                index = placeholder_end + 1
-                continue
-        if character in "{}[]:,":
-            tokens.append(YamlFlowToken(character, character, line))
-            index += 1
-            continue
-        if character == "'":
-            token_line = line
-            index += 1
-            value: list[str] = []
-            while index < length:
-                character = text[index]
-                if character == "'":
-                    if index + 1 < length and text[index + 1] == "'":
-                        value.append("'")
-                        index += 2
-                        continue
-                    index += 1
-                    tokens.append(YamlFlowToken("scalar", "".join(value), token_line))
-                    break
-                if character == "\n":
-                    line += 1
-                value.append(character)
-                index += 1
-            else:
-                raise YamlFlowParseError("unterminated single-quoted scalar", line)
-            continue
-        if character == '"':
-            token_line = line
-            index += 1
-            value = []
-            while index < length:
-                character = text[index]
-                if character == '"':
-                    index += 1
-                    tokens.append(YamlFlowToken("scalar", "".join(value), token_line))
-                    break
-                if character == "\n":
-                    line += 1
-                if character != "\\":
-                    value.append(character)
-                    index += 1
+    def mark_line(mark: object | None) -> int:
+        raw_line = getattr(mark, "line", None)
+        return raw_line + 1 if isinstance(raw_line, int) and raw_line >= 0 else 0
+
+    try:
+        document = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None) or getattr(
+            error, "context_mark", None
+        )
+        return [], mark_line(mark)
+    except Exception:
+        return [], 0
+
+    if document is None:
+        return [], None
+
+    findings: list[Finding] = []
+    seen_findings: set[tuple[str, int]] = set()
+    source_lines = text.splitlines()
+    visited: set[int] = set()
+    merge_tag = "tag:yaml.org,2002:merge"
+
+    def effective_mapping_items(
+        node: object,
+        resolving: set[int] | None = None,
+    ) -> list[tuple[object, object]]:
+        if not isinstance(node, MappingNode):
+            return []
+
+        active = resolving if resolving is not None else set()
+        node_id = id(node)
+        if node_id in active:
+            raise YamlAstError("recursive YAML merge", mark_line(node.start_mark))
+        active.add(node_id)
+        try:
+            merged: dict[str, tuple[object, object]] = {}
+            explicit: dict[str, tuple[object, object]] = {}
+            for key_node, value_node in node.value:
+                if isinstance(key_node, ScalarNode) and key_node.tag == merge_tag:
+                    if isinstance(value_node, MappingNode):
+                        merge_sources = [value_node]
+                    elif isinstance(value_node, SequenceNode) and all(
+                        isinstance(item, MappingNode) for item in value_node.value
+                    ):
+                        merge_sources = value_node.value
+                    else:
+                        raise YamlAstError(
+                            "invalid YAML merge", mark_line(value_node.start_mark)
+                        )
+                    for source in merge_sources:
+                        for merged_key, merged_value in effective_mapping_items(
+                            source, active
+                        ):
+                            if isinstance(merged_key, ScalarNode):
+                                merged.setdefault(
+                                    merged_key.value, (merged_key, merged_value)
+                                )
                     continue
-                index += 1
-                if index >= length:
-                    raise YamlFlowParseError("unterminated double-quoted escape", line)
-                escape = text[index]
-                value.append(escape_values.get(escape, escape))
-                index += 1
-            else:
-                raise YamlFlowParseError("unterminated double-quoted scalar", line)
-            continue
+                if isinstance(key_node, ScalarNode):
+                    explicit[key_node.value] = (key_node, value_node)
+            merged.update(explicit)
+            return list(merged.values())
+        finally:
+            active.remove(node_id)
 
-        token_line = line
-        start = index
-        while index < length:
-            character = text[index]
-            if character.isspace() or character in "{}[]:,":
-                break
-            index += 1
-        tokens.append(YamlFlowToken("scalar", text[start:index], token_line))
-
-    tokens.append(YamlFlowToken("eof", "", line))
-    return tokens
-
-
-class YamlFlowSecretParser:
-    def __init__(self, path: str, text: str) -> None:
-        self.path = path
-        self.lines = text.splitlines()
-        self.tokens = tokenize_yaml_flow(text)
-        self.findings: list[Finding] = []
-        self.seen_findings: set[tuple[str, int]] = set()
-
-    def parse(self) -> list[Finding]:
-        for index in range(len(self.tokens) - 2):
-            token = self.tokens[index]
-            section = token.value.lower()
-            if (
-                token.kind == "scalar"
-                and section in {"jwt", "gemini"}
-                and self.tokens[index + 1].kind == ":"
-                and self.tokens[index + 2].kind == "{"
-            ):
-                self._parse_mapping(index + 2, section)
-        return self.findings
-
-    def _token(self, index: int) -> YamlFlowToken:
-        if index >= len(self.tokens):
-            raise YamlFlowParseError("unexpected end of flow mapping", self.tokens[-1].line)
-        return self.tokens[index]
-
-    def _parse_mapping(self, index: int, section: str | None) -> int:
-        index = self._expect(index, "{")
-        if self._token(index).kind == "}":
-            return index + 1
-
-        while True:
-            property_token = self._token(index)
-            if property_token.kind != "scalar":
-                raise YamlFlowParseError("expected flow property", property_token.line)
-            index = self._expect(index + 1, ":")
-            property_name = property_token.value.lower()
-            category = None
-            if section == "jwt" and property_name == "key":
-                category = "JWT_KEY"
-            elif section == "gemini" and property_name == "apikey":
-                category = "GEMINI_API_KEY"
-
-            child_section = property_name if property_name in {"jwt", "gemini"} else None
-            if self._token(index).kind in {"{", "["}:
-                index = self._parse_value(index, child_section)
-            else:
-                index, scalar_value, scalar_line = self._parse_scalar(index, {",", "}"})
-                if category:
-                    self._record_finding(category, scalar_value, scalar_line)
-
-            token = self._token(index)
-            if token.kind == ",":
-                index += 1
-                if self._token(index).kind == "}":
-                    return index + 1
-                continue
-            if token.kind != "}":
-                raise YamlFlowParseError("expected flow mapping close", token.line)
-            return index + 1
-
-    def _parse_sequence(self, index: int) -> int:
-        index = self._expect(index, "[")
-        if self._token(index).kind == "]":
-            return index + 1
-        while True:
-            index = self._parse_value(index, None)
-            token = self._token(index)
-            if token.kind == ",":
-                index += 1
-                if self._token(index).kind == "]":
-                    return index + 1
-                continue
-            if token.kind != "]":
-                raise YamlFlowParseError("expected flow sequence close", token.line)
-            return index + 1
-
-    def _parse_value(self, index: int, section: str | None) -> int:
-        if self._token(index).kind == "{":
-            return self._parse_mapping(index, section)
-        if self._token(index).kind == "[":
-            return self._parse_sequence(index)
-        index, _, _ = self._parse_scalar(index, {",", "}", "]"})
-        return index
-
-    def _parse_scalar(
-        self,
-        index: int,
-        terminators: set[str],
-    ) -> tuple[int, str, int]:
-        scalar_line = self._token(index).line
-        values: list[str] = []
-        while self._token(index).kind not in terminators | {"eof"}:
-            values.append(self._token(index).value)
-            index += 1
-        if not values:
-            raise YamlFlowParseError("expected flow scalar", scalar_line)
-        return index, " ".join(values), scalar_line
-
-    def _expect(self, index: int, kind: str) -> int:
-        token = self._token(index)
-        if token.kind != kind:
-            raise YamlFlowParseError(f"expected {kind}", token.line)
-        return index + 1
-
-    def _record_finding(self, category: str, value: str, line: int) -> None:
-        if is_placeholder(value) or is_obvious_test_fixture(self.path, value):
+    def record_finding(category: str, value_node: object) -> None:
+        if not isinstance(value_node, ScalarNode):
             return
-        source_line = self.lines[line - 1] if line <= len(self.lines) else ""
-        if FIXTURE_MARKER in source_line.lower() and is_test_fixture_path(self.path):
+        value = value_node.value
+        if is_placeholder(value) or is_obvious_test_fixture(path, value):
+            return
+        line = mark_line(value_node.start_mark)
+        source_line = source_lines[line - 1] if 0 < line <= len(source_lines) else ""
+        if FIXTURE_MARKER in source_line.lower() and is_test_fixture_path(path):
             return
         finding_key = (category, line)
-        if finding_key not in self.seen_findings:
-            self.findings.append(Finding(category, self.path, line))
-            self.seen_findings.add(finding_key)
+        if finding_key not in seen_findings:
+            findings.append(Finding(category, path, line))
+            seen_findings.add(finding_key)
 
+    def visit(node: object) -> None:
+        node_id = id(node)
+        if node_id in visited:
+            return
+        visited.add(node_id)
 
-def scan_yaml_flow_secrets(path: str, text: str) -> tuple[list[Finding], int | None]:
+        if isinstance(node, MappingNode):
+            items = effective_mapping_items(node)
+            for key_node, value_node in items:
+                if not isinstance(key_node, ScalarNode) or not isinstance(
+                    value_node, MappingNode
+                ):
+                    continue
+                section = key_node.value.casefold()
+                if section not in {"jwt", "gemini"}:
+                    continue
+                target_key = "key" if section == "jwt" else "apikey"
+                category = "JWT_KEY" if section == "jwt" else "GEMINI_API_KEY"
+                for child_key, child_value in effective_mapping_items(value_node):
+                    if (
+                        isinstance(child_key, ScalarNode)
+                        and child_key.value.casefold() == target_key
+                    ):
+                        record_finding(category, child_value)
+            for _, value_node in items:
+                visit(value_node)
+        elif isinstance(node, SequenceNode):
+            for value_node in node.value:
+                visit(value_node)
+
     try:
-        return YamlFlowSecretParser(path, text).parse(), None
-    except YamlFlowParseError as error:
+        visit(document)
+    except YamlAstError as error:
         return [], error.line
     except RecursionError:
         return [], 0
+    except Exception:
+        return [], 0
+    return findings, None
 
 
 def scan_line(
     path: str,
     line_number: int,
     line: str,
-    direct_sections: set[str] | None = None,
+    include_assignments: bool = True,
     include_inline_sections: bool = True,
 ) -> list[Finding]:
     if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
@@ -684,7 +528,6 @@ def scan_line(
 
     findings: list[Finding] = []
     found_categories: set[str] = set()
-    is_yaml = Path(path).suffix.lower() in {".yaml", ".yml"}
 
     def add_finding(category: str) -> None:
         if category not in found_categories:
@@ -715,27 +558,20 @@ def scan_line(
     ):
         add_finding("POSTGRES_URI_CREDENTIALS")
 
-    for category, pattern in (
-        ("JWT_KEY", YAML_JWT_KEY if is_yaml else JWT_KEY),
-        ("GEMINI_API_KEY", YAML_GEMINI_API_KEY if is_yaml else GEMINI_API_KEY),
-        ("PASSWORD", PASSWORD),
-    ):
-        if has_literal_match(pattern):
-            add_finding(category)
+    if include_assignments:
+        for category, pattern in (
+            ("JWT_KEY", JWT_KEY),
+            ("GEMINI_API_KEY", GEMINI_API_KEY),
+            ("PASSWORD", PASSWORD),
+        ):
+            if has_literal_match(pattern):
+                add_finding(category)
 
     if include_inline_sections:
-        if has_literal_match(YAML_JWT_NESTED if is_yaml else JWT_NESTED):
+        if has_literal_match(JWT_NESTED):
             add_finding("JWT_KEY")
-        if has_literal_match(YAML_GEMINI_NESTED if is_yaml else GEMINI_NESTED):
+        if has_literal_match(GEMINI_NESTED):
             add_finding("GEMINI_API_KEY")
-
-    active_direct_sections = direct_sections or set()
-    jwt_child = YAML_JWT_CHILD if is_yaml else JWT_CHILD
-    gemini_child = YAML_GEMINI_CHILD if is_yaml else GEMINI_CHILD
-    if "jwt" in active_direct_sections and has_literal_match(jwt_child):
-        add_finding("JWT_KEY")
-    if "gemini" in active_direct_sections and has_literal_match(gemini_child):
-        add_finding("GEMINI_API_KEY")
     return findings
 
 
@@ -765,9 +601,9 @@ def scan(repo: Path) -> list[Finding]:
         text = content.decode("utf-8", errors="replace")
         suffix = candidate.suffix.lower()
         is_json = suffix in {".json", ".jsonc"}
+        is_yaml = suffix in {".yaml", ".yml"}
         parsed_json_findings: list[Finding] = []
         json_error_line: int | None = None
-        yaml_error_line: int | None = None
         if is_json:
             parsed_json_findings, json_error_line = scan_json_secrets(entry.path, text)
             if json_error_line is not None:
@@ -775,47 +611,21 @@ def scan(repo: Path) -> list[Finding]:
         structured_findings_by_line: dict[int, list[Finding]] = {}
         for finding in parsed_json_findings:
             structured_findings_by_line.setdefault(finding.line, []).append(finding)
-        if suffix in {".yaml", ".yml"}:
-            parsed_yaml_findings, yaml_error_line = scan_yaml_flow_secrets(
-                entry.path, text
-            )
+        if is_yaml:
+            parsed_yaml_findings, yaml_error_line = scan_yaml_secrets(entry.path, text)
             if yaml_error_line is not None:
                 findings.append(Finding("SCAN_ERROR", entry.path, yaml_error_line))
+                continue
             for finding in parsed_yaml_findings:
                 structured_findings_by_line.setdefault(finding.line, []).append(finding)
 
-        yaml_sections: list[YamlSectionState] = []
         for line_number, line in enumerate(text.splitlines(), start=1):
-            stripped = line.strip()
-            indentation = len(line) - len(line.lstrip())
-
-            direct_sections: set[str] = set()
-            if suffix in {".yaml", ".yml"}:
-                is_yaml_content = bool(stripped) and not stripped.startswith("#")
-                if is_yaml_content:
-                    yaml_sections = [
-                        state for state in yaml_sections if indentation > state.indent
-                    ]
-                    for state in yaml_sections:
-                        if state.direct_child_indent is None:
-                            state.direct_child_indent = indentation
-                        if indentation == state.direct_child_indent:
-                            direct_sections.add(state.section)
-                    header_match = YAML_SECTION_HEADER.match(line)
-                    if header_match:
-                        yaml_sections.append(
-                            YamlSectionState(
-                                section=header_match.group("section").lower(),
-                                indent=len(header_match.group("indent")),
-                            )
-                        )
-
             line_findings = scan_line(
                 entry.path,
                 line_number,
                 line,
-                direct_sections,
-                include_inline_sections=not is_json and yaml_error_line is None,
+                include_assignments=not is_yaml,
+                include_inline_sections=not is_json and not is_yaml,
             )
             findings.extend(line_findings)
             found_categories = {finding.category for finding in line_findings}

@@ -46,11 +46,11 @@ class ScannerTests(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         self.run_git("add", "--", relative_path)
 
-    def scan(self) -> subprocess.CompletedProcess[str]:
+    def scan(self, *python_arguments: str) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PYTHONUTF8"] = "1"
         result = subprocess.run(
-            [sys.executable, str(SCANNER)],
+            [sys.executable, *python_arguments, str(SCANNER)],
             cwd=self.repo,
             env=environment,
             text=True,
@@ -558,7 +558,7 @@ class ScannerTests(unittest.TestCase):
             "  Metadata: {\n"
             "    Key: nested-only-jwt-value\n"
             "  },\n"
-            f"  Key: {jwt}\n"
+            f'  Key: "{jwt}"\n'
             "}\n"
             "Gemini: {\n"
             "  Metadata: { ApiKey: nested-only-gemini-value },\n"
@@ -619,11 +619,6 @@ class ScannerTests(unittest.TestCase):
         shell_suffix = "${JWT_KEY}#literal-suffix"  # secret-scan: test-fixture
         github_suffix = "${{ secrets.GEMINI_KEY }}#literal-suffix"  # secret-scan: test-fixture
         self.track(
-            "hash-flat.yaml",
-            f"Jwt:Key={shell_suffix}\n"  # secret-scan: test-fixture
-            f"Gemini:ApiKey={github_suffix}\n",  # secret-scan: test-fixture
-        )
-        self.track(
             "hash-block.yaml",
             "Jwt:\n"
             f"  Key: {shell_suffix}\n"
@@ -632,8 +627,8 @@ class ScannerTests(unittest.TestCase):
         )
         self.track(
             "hash-flow.yaml",
-            f"Jwt: {{ Key: {shell_suffix} }}\n"
-            f"Gemini: {{ ApiKey: {github_suffix} }}\n",
+            f'Jwt: {{ Key: "{shell_suffix}" }}\n'
+            f'Gemini: {{ ApiKey: "{github_suffix}" }}\n',
         )
         self.track(
             "hash-comments.yaml",
@@ -650,10 +645,144 @@ class ScannerTests(unittest.TestCase):
             [
                 "JWT_KEY hash-block.yaml:2 [REDACTED]",
                 "GEMINI_API_KEY hash-block.yaml:4 [REDACTED]",
-                "JWT_KEY hash-flat.yaml:1 [REDACTED]",
-                "GEMINI_API_KEY hash-flat.yaml:2 [REDACTED]",
                 "JWT_KEY hash-flow.yaml:1 [REDACTED]",
                 "GEMINI_API_KEY hash-flow.yaml:2 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn("literal-suffix", result.stdout)
+
+    def test_yaml_ast_supports_anchors_aliases_merges_and_core_tags(self) -> None:
+        jwt = "anchored-jwt-secret-1234567890"  # secret-scan: test-fixture
+        gemini = "merged-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "yaml-features.yaml",
+            f'jwt_key: &jwt_key !!str "{jwt}"\n'
+            "jwt_defaults: &jwt_defaults !!map\n"
+            "  !!str Key: *jwt_key\n"
+            "gemini_defaults: &gemini_defaults\n"
+            f"  ApiKey: !!str {gemini}\n"
+            "Jwt: *jwt_defaults\n"
+            "Gemini: !!map\n"
+            "  <<: *gemini_defaults\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY yaml-features.yaml:1 [REDACTED]",
+                "GEMINI_API_KEY yaml-features.yaml:5 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (jwt, gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_ast_supports_bom_escaped_keys_and_cr_lines(self) -> None:
+        bom_jwt = "bom-escaped-jwt-secret-1234567890"  # secret-scan: test-fixture
+        bom_gemini = "bom-escaped-gemini-secret"  # secret-scan: test-fixture
+        cr_jwt = "cr-yaml-jwt-secret-1234567890"  # secret-scan: test-fixture
+        cr_gemini = "cr-yaml-gemini-secret"  # secret-scan: test-fixture
+        self.track(
+            "bom-escaped.yaml",
+            '\ufeff"J\\u0077t":\n'
+            f'  "K\\u0065y": "{bom_jwt}"\n'
+            '"G\\u0065mini":\n'
+            f'  "Api\\u004bey": "{bom_gemini}"\n',
+        )
+        cr_path = self.repo / "cr-only.yaml"
+        cr_path.write_bytes(
+            b"Jwt:\r"
+            + f"  Key: {cr_jwt}\r".encode()
+            + b"Gemini:\r"
+            + f"  ApiKey: {cr_gemini}\r".encode()
+        )
+        self.run_git("add", "--", "cr-only.yaml")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY bom-escaped.yaml:2 [REDACTED]",
+                "GEMINI_API_KEY bom-escaped.yaml:4 [REDACTED]",
+                "JWT_KEY cr-only.yaml:2 [REDACTED]",
+                "GEMINI_API_KEY cr-only.yaml:4 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        for raw_secret in (bom_jwt, bom_gemini, cr_jwt, cr_gemini):
+            self.assertNotIn(raw_secret, result.stdout)
+
+    def test_yaml_block_scalars_are_values_not_embedded_yaml(self) -> None:
+        jwt = "block-scalar-jwt-secret-1234567890"  # secret-scan: test-fixture
+        self.track(
+            "block-scalars.yaml",
+            "Jwt:\n"
+            "  Key: |-\n"
+            f"    {jwt}\n"
+            "Notes: |\n"
+            "  Gemini: { ApiKey: embedded-literal-only\n"  # secret-scan: test-fixture
+            "  Jwt:\n"
+            "    Key: embedded-literal-only\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY block-scalars.yaml:2 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn(jwt, result.stdout)
+        self.assertNotIn("embedded-literal-only", result.stdout)
+
+    def test_yaml_dependency_failure_fails_closed(self) -> None:
+        secret = "dependency-jwt-secret-1234567890"  # secret-scan: test-fixture
+        self.track("dependency.yaml", f"Jwt:\n  Key: {secret}\n")
+
+        result = self.scan("-S")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "SCAN_ERROR dependency.yaml:0 [REDACTED]",
+                *HISTORICAL_NOTICE.splitlines(),
+            ],
+            result.stdout.splitlines(),
+        )
+        self.assertNotIn(secret, result.stdout)
+
+    def test_non_yaml_assignment_hash_suffixes_are_literals(self) -> None:
+        jwt = "${JWT_KEY}#literal-suffix"  # secret-scan: test-fixture
+        gemini = "${GEMINI_KEY}#literal-suffix"  # secret-scan: test-fixture
+        password = "${DB_PASSWORD}#literal-suffix"  # secret-scan: test-fixture
+        self.track(
+            "hash.env",
+            f"JWT__KEY={jwt}\n"  # secret-scan: test-fixture
+            f"GEMINI__APIKEY={gemini}\n"  # secret-scan: test-fixture
+            f"Password={password}\n"  # secret-scan: test-fixture
+            "JWT__KEY=${JWT_KEY} # runtime placeholder\n"
+            "GEMINI__APIKEY=${GEMINI_KEY} # runtime placeholder\n"
+            "Password=${DB_PASSWORD} # runtime placeholder\n",
+        )
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                "JWT_KEY hash.env:1 [REDACTED]",
+                "GEMINI_API_KEY hash.env:2 [REDACTED]",
+                "PASSWORD hash.env:3 [REDACTED]",
                 *HISTORICAL_NOTICE.splitlines(),
             ],
             result.stdout.splitlines(),
