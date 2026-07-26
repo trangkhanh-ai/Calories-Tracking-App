@@ -90,7 +90,7 @@ def is_placeholder(value: str) -> bool:
 
 
 def is_test_fixture_path(path: str) -> bool:
-    return "tests" in {part.lower() for part in Path(path).parts}
+    return bool({"test", "tests", "fixture", "fixtures"} & {part.lower() for part in Path(path).parts})
 
 
 def is_obvious_test_fixture(path: str, line: str, value: str) -> bool:
@@ -102,7 +102,7 @@ def is_obvious_test_fixture(path: str, line: str, value: str) -> bool:
 
 
 def scan_line(path: str, line_number: int, line: str) -> list[Finding]:
-    if FIXTURE_MARKER in line.lower():
+    if FIXTURE_MARKER in line.lower() and is_test_fixture_path(path):
         return []
 
     findings: list[Finding] = []

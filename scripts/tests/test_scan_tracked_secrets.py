@@ -115,11 +115,21 @@ class ScannerTests(unittest.TestCase):
 
     def test_accepts_explicitly_marked_test_fixture(self) -> None:
         secret = "AIzaSyFixtureValueOnly123456789012345678"  # secret-scan: test-fixture
-        self.track("fixture.txt", f"api_key={secret} # secret-scan: test-fixture\n")
+        self.track("tests/fixture.txt", f"api_key={secret} # secret-scan: test-fixture\n")
 
         result = self.scan()
 
         self.assertEqual(0, result.returncode)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_fixture_marker_cannot_bypass_scan_in_production_path(self) -> None:
+        secret = "JWT__KEY=production-secret-that-must-be-redacted-1234567890"  # secret-scan: test-fixture
+        self.track("production.env", f"{secret} # secret-scan: test-fixture\n")
+
+        result = self.scan()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("JWT_KEY production.env:1 [REDACTED]", result.stdout)
         self.assertNotIn(secret, result.stdout)
 
     def test_ignores_source_property_assignments_and_pattern_declarations(self) -> None:
