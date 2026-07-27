@@ -354,7 +354,7 @@ flowchart LR
     end
 
     subgraph Auth
-        B["🔐 JWT Token & Diary<br/>(SharedPreferences)"]
+        B["🔐 JWT Token & Cache fallback<br/>(SharedPreferences)"]
     end
 
     subgraph Backend
@@ -374,7 +374,7 @@ flowchart LR
     end
 
     A -->|"HTTP + JWT (kể cả ảnh Base64)"| C
-    A -->|"Lưu/đọc token & diary local"| B
+    A -->|"JWT & local cache fallback"| B
     C -->|"Gắn Gemini key server-side"| E
     C -->|"EF Core"| D
     F -->|"Seeder khởi tạo"| D
@@ -389,4 +389,4 @@ flowchart LR
 > [!IMPORTANT]
 > **Bảo mật**: Tính năng Scanner (Quét ảnh AI) gọi qua **endpoint `POST /api/analysis/food` của Backend .NET** (yêu cầu JWT) thay vì gọi trực tiếp Google Gemini API. Backend đính kèm Gemini key đọc từ user-secrets (dev) hoặc biến môi trường `GEMINI__APIKEY` (production). Client Flutter **không giữ bất kỳ secret nào** — mọi thứ đưa vào Flutter Web đều đọc được từ bundle JS. Proxy Node cũ (`scripts/gemini_proxy.js`) đã bị xóa khỏi repository.
 >
-> **Ghi chú diary**: các bữa ăn hiện lưu local (SharedPreferences); mục tiêu calo đồng bộ từ profile backend. Backend Diary API có sẵn nhưng client chưa nối (planned).
+> **Ghi chú diary**: client đọc/ghi qua Diary API theo hướng server-first; server là source of truth. SharedPreferences chỉ là cache best-effort và stale-read fallback; lỗi ghi server không bao giờ được chuyển thành trạng thái ghi thành công.
