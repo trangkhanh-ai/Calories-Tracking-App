@@ -66,18 +66,18 @@ Run:
 ```powershell
 $uri = 'https://calories-tracking-api-wno2.onrender.com/health/live'
 $ok = $false
-1..4 | ForEach-Object {
+for ($attempt = 1; $attempt -le 4; $attempt++) {
   $started = Get-Date
   try {
     $response = Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 45
     $seconds = [int]((Get-Date) - $started).TotalSeconds
-    "attempt=$($_) status=$($response.StatusCode) elapsed=${seconds}s"
-    if ($response.StatusCode -eq 200) { $ok = $true; return }
+    "attempt=$attempt status=$($response.StatusCode) elapsed=${seconds}s"
+    if ($response.StatusCode -eq 200) { $ok = $true; break }
   } catch {
     $seconds = [int]((Get-Date) - $started).TotalSeconds
-    "attempt=$($_) status=retryable-failure elapsed=${seconds}s"
+    "attempt=$attempt status=retryable-failure elapsed=${seconds}s"
   }
-  Start-Sleep -Seconds 5
+  if ($attempt -lt 4) { Start-Sleep -Seconds 5 }
 }
 if (-not $ok) { throw 'Liveness did not return HTTP 200 after four safe attempts' }
 ```
