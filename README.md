@@ -1,163 +1,202 @@
-# 🍏 Calories Tracking App (AI-Powered)
+# Calories Tracking App
 
-![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white)
-![Dart](https://img.shields.io/badge/dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white)
-![.NET](https://img.shields.io/badge/.NET_9-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
-![Gemini AI](https://img.shields.io/badge/Gemini_AI-%238E75B2.svg?style=for-the-badge&logo=google&logoColor=white)
+<p align="center">
+  <a href="https://calories-tracking-app-ten.vercel.app/">
+    <img src="docs/assets/repository-banner.png" alt="Calories Tracking App - AI-assisted nutrition tracking" width="100%">
+  </a>
+</p>
 
-Ứng dụng theo dõi calo thông minh: chụp ảnh món ăn → **Google Gemini Vision** tự động nhận diện và phân tích dinh dưỡng (ưu tiên món Việt: phở, bún, cơm, bánh mì...).
+<p align="center">
+  <a href="https://calories-tracking-app-ten.vercel.app/"><img alt="Trải nghiệm ứng dụng / Open Live Demo" src="https://img.shields.io/badge/Open%20Live%20Demo-Tr%E1%BA%A3i%20nghi%E1%BB%87m%20%E1%BB%A9ng%20d%E1%BB%A5ng-0f766e?style=for-the-badge&logo=vercel&logoColor=white"></a>
+</p>
 
-- **Frontend:** Flutter (Web / Android / iOS)
-- **Backend:** .NET 9 Web API (Clean Architecture) + EF Core; SQLite cho development, PostgreSQL/Neon cho production
-- **AI:** Gemini 2.5 Flash (gọi từ backend — client không giữ API key)
+Ứng dụng theo dõi calo và dinh dưỡng có trợ lý AI: bạn ghi nhật ký bữa ăn, tra cứu thực phẩm và gửi ảnh món ăn để backend phân tích với Gemini.
 
-## 📸 Screenshots
+> **English** — A full-stack calorie and nutrition tracker with Flutter Web, an ASP.NET Core API, USDA food search, and server-side Gemini image analysis.
 
-<!-- TODO: chạy app và chụp màn hình, lưu vào docs/screenshots/ -->
-| Trang chủ | Scan món ăn | Kết quả | Mục tiêu calo |
-|---|---|---|---|
-| _(coming soon)_ | _(coming soon)_ | _(coming soon)_ | _(coming soon)_ |
+<p align="center">
+  <img alt="Flutter" src="https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white">
+  <img alt="Dart" src="https://img.shields.io/badge/Dart-0175C2?style=flat-square&logo=dart&logoColor=white">
+  <img alt=".NET 9" src="https://img.shields.io/badge/.NET%209-512BD4?style=flat-square&logo=dotnet&logoColor=white">
+  <img alt="ASP.NET Core" src="https://img.shields.io/badge/ASP.NET%20Core-512BD4?style=flat-square&logo=dotnet&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white">
+  <img alt="Gemini" src="https://img.shields.io/badge/Gemini-4285F4?style=flat-square&logo=google&logoColor=white">
+  <img alt="Vercel" src="https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white">
+  <img alt="Render" src="https://img.shields.io/badge/Render-46E3B7?style=flat-square&logo=render&logoColor=111111">
+</p>
 
----
+<p align="center">
+  <img alt="Flutter CI" src="https://github.com/trangkhanh-ai/Calories-Tracking-App/actions/workflows/flutter-ci.yml/badge.svg?branch=main">
+  <img alt="Backend CI" src="https://github.com/trangkhanh-ai/Calories-Tracking-App/actions/workflows/backend-ci.yml/badge.svg?branch=main">
+</p>
 
-## ✅ Tính năng đã hoàn thành
+## 🚀 Trải nghiệm trực tiếp
 
-- 📸 **Scan món ăn qua Camera/Gallery** — Gemini phân tích Calories, Protein, Carbs, Fat cho từng món trong ảnh, trả JSON theo spec cố định ([docs/API_SPEC.md](docs/API_SPEC.md)).
-- 🔐 **Đăng ký / Đăng nhập** — JWT 7 ngày, mật khẩu hash BCrypt. "Nhớ tài khoản" chỉ lưu username (không bao giờ lưu mật khẩu).
-- 👤 **Hồ sơ cá nhân** — chiều cao/cân nặng/tuổi/giới tính/mức vận động + avatar, đồng bộ backend.
-- 🎯 **Thiết lập mục tiêu calo** — sau khi đăng ký (hoặc đăng nhập lần đầu chưa có mục tiêu), app dẫn qua màn `/goal-setup`: chọn mức vận động (Không tập / Tập nhẹ / Tập vừa / Tập nhiều), backend tính BMI, BMR (Mifflin-St Jeor), TDEE (không tập ⇒ hệ số 1.2) và calo khuyến nghị theo 5 mục tiêu: giữ cân, giảm chậm (−300), giảm bình thường (−500), tăng chậm (+250), tăng bình thường (+500). Endpoint `GET /api/profile/calorie-goal` trả về cả `activityFactor` đã áp dụng.
-- 📊 **Nhật ký & thống kê** — ghi bữa ăn theo Sáng/Trưa/Tối/Ăn vặt, thống kê 7 ngày. Nhật ký đồng bộ qua Diary API backend (server là source-of-truth).
-- 🔎 **Tra cứu thực phẩm** — tìm kiếm trên bộ dữ liệu dinh dưỡng USDA được seed bằng EF Core.
-- 🛡️ **Rate limiting** — endpoint phân tích ảnh, đăng ký, đăng nhập và tìm kiếm đều có rate limit per-IP hoặc per-user.
-- 🚀 **CI/CD** — GitHub Actions chạy analyze, test và build Flutter Web release trên mỗi PR; Vercel deploy frontend, Render deploy backend.
+- **Frontend:** [calories-tracking-app-ten.vercel.app](https://calories-tracking-app-ten.vercel.app/)
+- **Backend liveness:** [health/live](https://calories-tracking-api-wno2.onrender.com/health/live)
 
-## 🔮 Planned / Future improvements
+Production topology: Flutter Web chạy trên Vercel, ASP.NET Core API chạy trên Render và dữ liệu dùng Neon PostgreSQL. Gemini chỉ được gọi từ backend. Render Free có thể cold start sau một thời gian không hoạt động, vì vậy request đầu tiên đôi khi mất thêm thời gian.
 
-- [ ] Lưu JWT bằng `flutter_secure_storage` + refresh-token flow.
-- [ ] Lưu avatar thật (hiện là `FakeAvatarStorageService`).
-- [ ] Offline cache nhật ký bằng Isar.
+## Tổng quan
 
----
+Calories Tracking App giúp bạn theo dõi năng lượng và dinh dưỡng theo ngày. Ứng dụng hỗ trợ phân tích ảnh món ăn bằng Gemini thông qua backend, tìm kiếm thực phẩm từ USDA, thiết lập hồ sơ và mục tiêu calo, ghi nhật ký bữa ăn, xem thống kê bảy ngày, và giữ ranh giới rõ ràng giữa frontend và backend.
 
-## 🏗 Architecture hiện tại
+## Tính năng đã hoàn thành
 
-```text
-┌──────────────────┐        HTTPS/JSON         ┌───────────────────────────┐
-│   Flutter App    │ ────────────────────────▶ │   .NET 9 Web API          │
-│  (Web/Android)   │   /api/auth, /profile,    │   Clean Architecture      │
-│                  │   /diary, /food,          │   Api → Application       │
-│  KHÔNG giữ       │   /analysis/food          │       → Domain            │
-│  API key nào     │ ◀──────────────────────── │       → Infrastructure    │
-└──────────────────┘                           └─────────┬─────────┬───────┘
-                                                         │         │
-                                              SQLite dev / Neon prod │ x-goog-api-key
-                                                     + EF Core       ▼
-                                                         Google Gemini 2.5 Flash
+| Nhóm | Trạng thái |
+| --- | --- |
+| Phân tích ảnh món ăn bằng Gemini | Đã triển khai; request đi qua API backend |
+| Đăng ký, đăng nhập, JWT và BCrypt | Đã triển khai |
+| Hồ sơ cá nhân và mục tiêu calo | Đã triển khai |
+| Tìm kiếm thực phẩm USDA | Đã triển khai |
+| Nhật ký bữa ăn server-first | Đã triển khai; backend là source of truth |
+| Thống kê bảy ngày | Đã triển khai |
+| Rate limiting | Đã triển khai cho các endpoint nhạy cảm |
+| Health checks và production deployment | Đã cấu hình cho Render/Vercel/Neon |
+
+## 🧰 Công nghệ
+
+| Nhóm | Thành phần |
+| --- | --- |
+| Frontend | Flutter, Dart, Riverpod, Dio, go_router |
+| Backend | ASP.NET Core, .NET 9, Clean Architecture, EF Core, JWT, BCrypt, rate limiting |
+| Data / AI | PostgreSQL, Neon, SQLite (development), USDA, Gemini |
+| Infrastructure | GitHub Actions, Vercel, Render, Docker |
+
+## 🏗️ Kiến trúc
+
+```mermaid
+flowchart LR
+    U[User] -->|HTTPS| FW[Flutter Web<br/>Vercel]
+    FW -->|JSON + JWT| API[ASP.NET Core API<br/>Render]
+    API -->|EF Core + TLS| DB[(Neon PostgreSQL)]
+    API -->|Server-side API key| GEM[Gemini API]
 ```
 
-- Toàn bộ lời gọi Gemini đi qua backend (`POST /api/analysis/food`, yêu cầu JWT). API key chỉ tồn tại trong biến môi trường server.
-- Proxy Node cũ (`scripts/gemini_proxy.js`) **đã bị xóa**. Toàn bộ lời gọi Gemini nay chỉ đi qua backend .NET.
+- Flutter gửi request HTTPS/JSON và JWT đến API; API xác thực token trước khi xử lý tài nguyên người dùng.
+- Gemini API key chỉ tồn tại ở backend, không được đưa vào Flutter Web hoặc `--dart-define`.
+- Nhật ký bữa ăn được đọc/ghi qua Diary API; backend là nguồn dữ liệu chính thay vì chỉ dựa vào bộ nhớ cục bộ.
+- Xem sơ đồ luồng và ranh giới module trong [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md).
 
-Cấu trúc Flutter (Feature-First):
+## ☁️ Production deployment
 
-```text
-lib/
-├── app/               # Theme, Router (go_router)
-├── core/network/      # ApiClient (dio + JWT interceptor)
-├── features/
-│   ├── auth/          # Đăng ký / đăng nhập
-│   ├── diary/         # Nhật ký bữa ăn + thống kê
-│   ├── food_search/   # Tra cứu thực phẩm USDA
-│   ├── home/          # Dashboard vòng tròn calo
-│   ├── profile/       # Hồ sơ + BMI/TDEE + goal setup
-│   └── scanner/       # Camera + phân tích ảnh qua backend
-└── shared/utils/      # Hằng số app (không chứa secret)
-```
+| Thành phần | Nền tảng | Endpoint / ghi chú |
+| --- | --- | --- |
+| Frontend | Vercel | [Live app](https://calories-tracking-app-ten.vercel.app/) |
+| Backend | Render Free | [Liveness](https://calories-tracking-api-wno2.onrender.com/health/live); readiness dùng `/health` |
+| Database | Neon PostgreSQL | Kết nối TLS; setup này không có private endpoint |
+| AI | Gemini | Chỉ gọi từ backend; API key không nằm trong client |
 
-Chi tiết: [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) · [docs/SPEC_DRIVEN_DEVELOPMENT.md](docs/SPEC_DRIVEN_DEVELOPMENT.md)
+## ⚡ Quick Start
 
----
+### Prerequisites
 
-## 🚀 Chạy dự án (Development)
+- Flutter SDK stable và Google Chrome
+- .NET SDK 9+
+- Gemini API key để dùng tính năng phân tích ảnh
 
-### Yêu cầu
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) ≥ 3.12 (Windows: cần bật **Developer Mode** — `start ms-settings:developers`)
-- [.NET SDK](https://dotnet.microsoft.com/download) 9/10
-- Gemini API key ([Google AI Studio](https://aistudio.google.com/apikey))
+### Backend
 
-### Bước 1 — Cấu hình secrets cho backend (bắt buộc)
-Không có secret nào nằm trong source code. Dùng user-secrets (dev):
-
-```bash
+```powershell
 cd backend/src/CaloriesTracking.Api
 dotnet user-secrets set "Gemini:ApiKey" "YOUR_GEMINI_API_KEY"
-dotnet user-secrets set "Jwt:Key" "CHUOI_BI_MAT_NGAU_NHIEN_DAI_HON_32_KY_TU"
+dotnet user-secrets set "Jwt:Key" "YOUR_RANDOM_JWT_KEY_AT_LEAST_32_CHARACTERS"
+dotnet run
 ```
 
-(Production: dùng biến môi trường.) Backend **từ chối khởi động** nếu thiếu PostgreSQL connection string, `Jwt:Key`, Gemini key hoặc CORS HTTPS an toàn.
+API chạy tại `http://localhost:5210`.
 
-### Bước 2 — Chạy backend + frontend
+### Flutter Web
 
-```bash
-# Cách nhanh (Windows): mở 2 cửa sổ tự động
-start.bat
-
-# Hoặc thủ công:
-cd backend/src/CaloriesTracking.Api && dotnet run     # API tại http://localhost:5210
-flutter pub get && flutter run -d chrome --web-port=54321
+```powershell
+flutter pub get
+flutter run -d chrome --dart-define=BACKEND_BASE_URL=http://localhost:5210
 ```
 
-> ⚠️ Nếu trước đây từng chạy bản cũ: xóa file `backend/src/CaloriesTracking.Api/calories.db` một lần (DB cũ tạo bằng `EnsureCreated`, bản mới dùng EF Migrations).
+### Android emulator
 
-### Android Emulator
-```bash
+```powershell
 flutter run --dart-define=BACKEND_BASE_URL=http://10.0.2.2:5210
 ```
 
----
+<details>
+<summary>Environment variables</summary>
 
-## 📦 Deploy (Production)
+ASP.NET Core dùng dấu hai chấm (`:`) cho user-secrets ở local và dấu gạch dưới kép (`__`) cho environment variables trên Render. Hai kiểu này tương đương theo section nhưng không phải cú pháp thay thế trong cùng một lệnh.
 
-### Backend → Render Free + Neon Free
+**Backend**
 
-Repository có [render.yaml](render.yaml) để tạo đúng một Docker Web Service Free; Blueprint không tạo Render Postgres. Database production dùng Neon và connection string chỉ được nhập qua biến môi trường Render.
+| Môi trường | Tên | Mục đích |
+| --- | --- | --- |
+| Local user-secrets | `Gemini:ApiKey` | Gemini key cho backend development |
+| Local user-secrets | `Jwt:Key` | JWT signing key dài tối thiểu 32 ký tự |
+| Render environment | `GEMINI__APIKEY` | Gemini key production |
+| Render environment | `JWT__KEY` | JWT signing key production |
+| ASP.NET Core / Render | `ConnectionStrings:DefaultConnection` ↔ `ConnectionStrings__DefaultConnection` | Chuỗi kết nối database; production dùng Neon PostgreSQL URI với TLS |
+| ASP.NET Core / Render | `Cors:AllowedOrigins:0` ↔ `CORS__ALLOWEDORIGINS__0` | Origin HTTPS đầu tiên được phép gọi API, chẳng hạn origin của frontend Vercel |
 
-| Biến | Ý nghĩa |
-|---|---|
-| `JWT__KEY` | Chuỗi bí mật ≥ 32 ký tự (app từ chối chạy nếu thiếu) |
-| `GEMINI__APIKEY` | Gemini API key |
-| `CORS__ALLOWEDORIGINS__0` | Origin Vercel dạng `https://<tên-project>.vercel.app`, không có path hoặc dấu `/` cuối |
-| `ConnectionStrings__DefaultConnection` | Neon PostgreSQL URI có `sslmode=require&channel_binding=require` |
+**Frontend**
 
-Hướng dẫn đầy đủ: [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md). Render dùng `GET /health` để kiểm tra database readiness; `GET /health/live` chỉ kiểm tra process liveness.
+| Cách chạy | Tên | Mục đích |
+| --- | --- | --- |
+| `--dart-define` | `BACKEND_BASE_URL` | Base URL của API; không thêm `/api` hoặc dấu `/` cuối |
 
-### Frontend → Vercel
+</details>
 
-Vercel là nền tảng deploy frontend duy nhất. Import repository, giữ **Root Directory** ở gốc repo (dự án Flutter nằm ở gốc), rồi đặt Environment Variable:
+## 📁 Cấu trúc dự án
 
 ```text
-BACKEND_BASE_URL=https://<service-name>.onrender.com
+lib/                    # Flutter app: features, routing, network, state
+backend/                # .NET solution: API, application, domain, infrastructure
+docs/                   # Architecture, API, setup, deployment, SDD
+scripts/                # Build, validation, data and secret-scan tooling
+test/                   # Flutter unit/widget tests
+.github/workflows/      # Flutter CI and backend CI
 ```
 
-Không thêm `/api`, path, query hay dấu `/` cuối. [scripts/vercel-build.sh](scripts/vercel-build.sh) sẽ dừng build nếu giá trị thiếu, không phải HTTPS, có path/credentials, hoặc trỏ về loopback. Flutter SDK được pin cứng ở `3.44.1` để build có thể tái lập.
+## ✅ Testing & quality
 
-Build tay:
-```bash
-flutter build web --release --base-href / \
-  --dart-define=BACKEND_BASE_URL=https://calories-api.onrender.com
-```
+CI kiểm tra các lớp chất lượng thực tế của repository:
 
-> Workflow [.github/workflows/deploy.yml](.github/workflows/deploy.yml) (GitHub Pages) **đã deprecated** và chỉ còn chạy thủ công qua `workflow_dispatch`. Hai đường deploy frontend song song sẽ cần hai origin CORS, trong khi `render.yaml` chỉ khai báo `CORS__ALLOWEDORIGINS__0`.
+- Flutter analyze, test và web release build; đồng thời kiểm tra cấu hình Vercel và phạm vi upload.
+- Backend Release build và test; PostgreSQL integration test qua TLS.
+- Docker production-container smoke test và kiểm tra seed data.
+- Tracked-secret scan bắt buộc trước các job backend.
+- Backend test suite xác thực contract của Render Blueprint trong [`render.yaml`](render.yaml); các bước provider-specific trong [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) vẫn cần xác minh thủ công.
 
-Sau khi deploy, phải kiểm tra URL Render thật, `GET /health`, CORS preflight và URL Vercel (kể cả deep-link như `/goal-setup`) trước khi tuyên bố hệ thống đã hoạt động production. Checklist smoke test đầy đủ: [docs/DEPLOYMENT_GUIDE.md §5](docs/DEPLOYMENT_GUIDE.md).
+Xem workflow: [Flutter CI](.github/workflows/flutter-ci.yml) · [Backend CI](.github/workflows/backend-ci.yml).
+
+## 🔒 Bảo mật
+
+- Gemini key chỉ cấu hình và gọi ở backend; Flutter Web không chứa secret.
+- Mật khẩu được hash bằng BCrypt; JWT được kiểm tra theo cấu hình production của API.
+- PostgreSQL production yêu cầu TLS và channel binding trong connection string.
+- CORS chỉ cho phép các HTTPS origin đã cấu hình; rate limiting giảm lạm dụng endpoint.
+- CI quét tracked secrets; không đưa credentials thật vào source, README hoặc `--dart-define`.
+
+## 📚 Tài liệu
+
+- [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) — luồng dữ liệu và ranh giới module
+- [API_SPEC.md](docs/API_SPEC.md) — API contract và payload
+- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) — checklist triển khai và smoke test
+- [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) — Render, Neon và Vercel operator guide
+- [DEV_SETUP.md](docs/DEV_SETUP.md) — setup local và chạy full stack
+- [SPEC_DRIVEN_DEVELOPMENT.md](docs/SPEC_DRIVEN_DEVELOPMENT.md) — quy trình phát triển theo spec
+
+## 🗺️ Roadmap
+
+- Secure JWT storage và refresh-token flow.
+- Lưu avatar thật thay cho storage giả lập hiện tại.
+- Offline cache cho nhật ký bữa ăn.
+
+## Contributors
+
+Bạn có thể xem [contributors graph](https://github.com/trangkhanh-ai/Calories-Tracking-App/graphs/contributors) để biết những người đã đóng góp cho repository.
 
 ---
 
-## 📱 iOS
-Đã cấu hình `Info.plist` (Camera, Photo Library, Microphone) và Deployment Target ≥ 13.0. Build iOS cần macOS + Xcode.
-
-## 🔒 Bảo mật
-- Client không chứa bất kỳ secret nào (Flutter Web compile ra JS — mọi thứ nhúng vào đều đọc được).
-- Mật khẩu: BCrypt hash ở server, không bao giờ lưu plaintext ở client.
-- JWT key & Gemini key: chỉ qua user-secrets (dev) hoặc biến môi trường (production).
-- Nếu lỡ commit key: **revoke ngay** tại Google AI Studio — xóa khỏi code là không đủ vì key còn trong git history.
+<p align="center">
+  <a href="https://github.com/trangkhanh-ai/Calories-Tracking-App">Calories Tracking App</a> ·
+  <a href="https://calories-tracking-app-ten.vercel.app/">Live app</a> ·
+  <a href="https://github.com/trangkhanh-ai/Calories-Tracking-App">Repository</a>
+</p>
