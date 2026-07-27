@@ -106,6 +106,8 @@ dotnet run
 
 API chạy tại `http://localhost:5210`.
 
+Giữ backend chạy trong terminal hiện tại. Mở một terminal riêng tại thư mục gốc của repository để chạy các lệnh Flutter bên dưới.
+
 ### Flutter Web
 
 ```powershell
@@ -187,7 +189,7 @@ Xem workflow: [Flutter CI](.github/workflows/flutter-ci.yml) · [Backend CI](.gi
 
 - Secure JWT storage và refresh-token flow.
 - Lưu avatar thật thay cho storage giả lập hiện tại.
-- Offline cache cho nhật ký bữa ăn.
+- Queued offline writes và đồng bộ lại khi có mạng.
 
 ## Contributors
 
@@ -196,7 +198,7 @@ Bạn có thể xem [contributors graph](https://github.com/trangkhanh-ai/Calori
 ---
 
 <p align="center">
-  <a href="https://github.com/trangkhanh-ai/Calories-Tracking-App">Calories Tracking App</a> ·
+  <strong>Calories Tracking App</strong> ·
   <a href="https://calories-tracking-app-ten.vercel.app/">Live app</a> ·
   <a href="https://github.com/trangkhanh-ai/Calories-Tracking-App">Repository</a>
 </p>
