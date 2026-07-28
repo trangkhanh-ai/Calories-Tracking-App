@@ -1,18 +1,22 @@
 import 'dart:async';
-import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-import '../providers/scanner_provider.dart';
-import '../widgets/scan_frame_overlay.dart';
-import '../widgets/capture_button.dart';
+
 import '../../../app/theme.dart';
+import '../providers/scanner_provider.dart';
+import '../services/scanner_camera_service.dart';
+import '../services/scanner_image_source.dart';
+import '../widgets/capture_button.dart';
+import '../widgets/scan_frame_overlay.dart';
 
 class CameraScannerScreen extends ConsumerStatefulWidget {
-  const CameraScannerScreen({super.key});
+  const CameraScannerScreen({super.key, this.cameraSession, this.imageSource});
+
+  final ScannerCameraSession? cameraSession;
+  final ScannerImageSource? imageSource;
 
   @override
   ConsumerState<CameraScannerScreen> createState() =>
@@ -21,13 +25,11 @@ class CameraScannerScreen extends ConsumerStatefulWidget {
 
 class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
     with WidgetsBindingObserver {
-  CameraController? _cameraController;
-  List<CameraDescription> _cameras = [];
-  int _selectedCamera = 0;
-  bool _flashOn = false;
-  bool _isInitialized = false;
-  bool _cameraUnavailable = false;
-  bool _isCapturing = false;
+  late final ScannerCameraSession _cameraSession;
+  late final ScannerImageSource _imageSource;
+  late final bool _ownsCameraSession;
+  bool _isAnalyzing = false;
+  bool _isLifecycleResumed = true;
   String _currentTip = '';
   int _tipIndex = 0;
   Timer? _tipTimer;
@@ -44,8 +46,12 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _currentTip = _tips[0];
-    _initCamera();
+    _ownsCameraSession = widget.cameraSession == null;
+    _cameraSession = widget.cameraSession ?? ScannerCameraSession();
+    _imageSource = widget.imageSource ?? PluginScannerImageSource();
+    _cameraSession.addListener(_onCameraStateChanged);
+    _currentTip = _tips.first;
+    unawaited(_cameraSession.start());
     _startTipRotation();
   }
 
@@ -53,21 +59,29 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tipTimer?.cancel();
-    _cameraController?.dispose();
+    _cameraSession.removeListener(_onCameraStateChanged);
+    if (_ownsCameraSession) {
+      unawaited(_cameraSession.shutdown());
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    if (state == AppLifecycleState.inactive) {
-      _isInitialized = false;
-      controller.dispose();
-      _cameraController = null;
-    } else if (state == AppLifecycleState.resumed) {
-      _initCamera();
+    _isLifecycleResumed = state == AppLifecycleState.resumed;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (!_isAnalyzing) unawaited(_cameraSession.resume());
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        unawaited(_cameraSession.suspend());
     }
+  }
+
+  void _onCameraStateChanged() {
+    if (mounted) setState(() {});
   }
 
   void _startTipRotation() {
@@ -80,165 +94,153 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
     });
   }
 
-  Future<void> _initCamera() async {
-    if (!kIsWeb) {
-      final status = await Permission.camera.request();
-      if (!status.isGranted) {
-        if (mounted) _showPermissionDeniedDialog();
-        return;
-      }
-    }
-
-    try {
-      _cameras = await availableCameras();
-    } catch (e) {
-      debugPrint('Camera init error: $e');
-      if (mounted) setState(() => _cameraUnavailable = true);
-      return;
-    }
-
-    if (_cameras.isEmpty) {
-      if (mounted) setState(() => _cameraUnavailable = true);
-      return;
-    }
-
-    try {
-      await _cameraController?.dispose();
-      _cameraController = CameraController(
-        _cameras[_selectedCamera],
-        ResolutionPreset
-            .medium, // Giảm từ high xuống medium để AI quét nhanh gấp 5 lần
-        enableAudio: false,
-      );
-      await _cameraController!.initialize();
-      if (mounted) setState(() => _isInitialized = true);
-    } catch (e) {
-      debugPrint('Camera controller error: $e');
-      if (mounted) setState(() => _cameraUnavailable = true);
-    }
-  }
-
-  Future<void> _switchCamera() async {
-    if (_cameras.length < 2) return;
-    setState(() {
-      _selectedCamera = (_selectedCamera + 1) % _cameras.length;
-      _isInitialized = false;
-    });
-    await _initCamera();
-  }
+  Future<void> _switchCamera() => _cameraSession.switchLensDirection();
 
   Future<void> _toggleFlash() async {
-    if (_cameraController == null) return;
-    setState(() => _flashOn = !_flashOn);
-    await _cameraController!.setFlashMode(
-      _flashOn ? FlashMode.torch : FlashMode.off,
+    final enabled = await _cameraSession.setFlashEnabled(
+      !_cameraSession.state.flashEnabled,
     );
+    if (!enabled && mounted) {
+      _showErrorSnackBar('Đèn flash không được hỗ trợ trên camera này.');
+    }
   }
 
   Future<void> _captureImage() async {
-    if (_cameraController == null || !_isInitialized || _isCapturing) return;
-    setState(() => _isCapturing = true);
-
     try {
-      final file = await _cameraController!.takePicture();
-      await _analyzeImage(file.path);
-    } catch (e) {
+      final file = await _cameraSession.capture();
+      if (file != null) await _processImage(file);
+    } catch (error) {
+      debugPrint('Camera capture failed (${error.runtimeType})');
       if (mounted) {
-        _showErrorSnackBar('Lỗi chụp ảnh: $e');
+        _showErrorSnackBar('Không thể chụp ảnh. Hãy thử lại.');
       }
-    } finally {
-      if (mounted) setState(() => _isCapturing = false);
+    }
+  }
+
+  Future<void> _captureWithRearCamera() async {
+    try {
+      final picked = await _imageSource.captureRearCamera();
+      if (picked != null) await _processImage(picked);
+    } catch (error) {
+      debugPrint('Rear camera picker failed (${error.runtimeType})');
+      if (mounted) {
+        _showErrorSnackBar(
+          'Không thể mở camera sau. Hãy kiểm tra quyền camera của trình duyệt.',
+        );
+      }
     }
   }
 
   Future<void> _pickFromGallery() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
-    if (picked != null) {
-      await _analyzeImage(picked.path);
+    try {
+      final picked = await _imageSource.pickGallery();
+      if (picked != null) await _processImage(picked);
+    } catch (error) {
+      debugPrint('Gallery picker failed (${error.runtimeType})');
+      if (mounted) {
+        _showErrorSnackBar('Không thể mở thư viện ảnh. Hãy thử lại.');
+      }
     }
   }
 
-  Future<void> _analyzeImage(String imagePath) async {
-    // Show loading overlay
-    if (!mounted) return;
+  Future<void> _processImage(XFile image) async {
+    if (_isAnalyzing) return;
+    setState(() => _isAnalyzing = true);
+    await _cameraSession.suspend();
+    var pickAnotherFromGallery = false;
+
+    try {
+      pickAnotherFromGallery = await _analyzeImage(image);
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+        if (_isLifecycleResumed) await _cameraSession.resume();
+      }
+    }
+
+    if (pickAnotherFromGallery && mounted) {
+      await _pickFromGallery();
+    }
+  }
+
+  Future<bool> _analyzeImage(XFile image) async {
+    if (!mounted) return false;
     _showLoadingOverlay();
 
     final result = await ref
         .read(scanProvider.notifier)
-        .analyzeImage(imagePath);
+        .analyzeImage(image.path);
 
-    if (!mounted) return;
-    Navigator.of(context).pop(); // Close loading overlay
+    if (!mounted) return false;
+    Navigator.of(context).pop();
 
-    if (result != null) {
-      if (!result.foodDetected) {
-        _showNoFoodDialog();
-      } else if (result.imageQuality == 'low_light') {
-        _showQualityWarning(
-          '💡 Ảnh hơi tối — kết quả có thể kém chính xác hơn',
-          result,
-          imagePath,
-        );
-      } else {
-        context.pushNamed('results', extra: result);
-      }
-    } else {
+    if (result == null) {
       final scanState = ref.read(scanProvider);
-      _showErrorSnackBar(scanState.errorMessage ?? 'Lỗi không xác định');
+      _showErrorSnackBar(scanState.errorMessage ?? 'Không thể phân tích ảnh.');
+      return false;
     }
+
+    if (!result.foodDetected) {
+      return _showNoFoodDialog();
+    }
+
+    if (result.imageQuality == 'low_light') {
+      _showQualityWarning(
+        '💡 Ảnh hơi tối — kết quả có thể kém chính xác hơn',
+        result,
+      );
+    }
+
+    await context.pushNamed('results', extra: result);
+    return false;
   }
 
   void _showLoadingOverlay() {
-    showDialog(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _AnalyzingOverlay(),
     );
   }
 
-  void _showNoFoodDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          '🤔 Không tìm thấy thức ăn',
-          style: TextStyle(color: AppTheme.onBackground),
-        ),
-        content: const Text(
-          'Hãy đảm bảo khung hình chứa món ăn rõ ràng và ánh sáng đủ.',
-          style: TextStyle(color: AppTheme.onSurface),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Thử lại',
-              style: TextStyle(color: AppTheme.primary),
+  Future<bool> _showNoFoodDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _pickFromGallery();
-            },
-            child: const Text(
-              'Chọn từ thư viện',
+            title: const Text(
+              '🤔 Không tìm thấy thức ăn',
+              style: TextStyle(color: AppTheme.onBackground),
+            ),
+            content: const Text(
+              'Hãy đảm bảo khung hình chứa món ăn rõ ràng và ánh sáng đủ.',
               style: TextStyle(color: AppTheme.onSurface),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text(
+                  'Thử lại',
+                  style: TextStyle(color: AppTheme.primary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text(
+                  'Chọn từ thư viện',
+                  style: TextStyle(color: AppTheme.onSurface),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ) ??
+        false;
   }
 
-  void _showQualityWarning(String message, result, String imagePath) {
+  void _showQualityWarning(String message, Object result) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -251,8 +253,6 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
         duration: const Duration(seconds: 5),
       ),
     );
-    // Also navigate to results
-    context.pushNamed('results', extra: result);
   }
 
   void _showErrorSnackBar(String message) {
@@ -264,104 +264,40 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
         action: SnackBarAction(
           label: 'Thử lại',
           textColor: Colors.white,
-          onPressed: () {},
+          onPressed: () => unawaited(_cameraSession.retry()),
         ),
-      ),
-    );
-  }
-
-  void _showPermissionDeniedDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text(
-          '📷 Cần quyền Camera',
-          style: TextStyle(color: AppTheme.onBackground),
-        ),
-        content: const Text(
-          'App cần quyền truy cập camera để quét thức ăn.',
-          style: TextStyle(color: AppTheme.onSurface),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Huỷ'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              openAppSettings();
-            },
-            child: const Text('Mở cài đặt'),
-          ),
-        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final cameraState = _cameraSession.state;
+    final isReady =
+        cameraState.status == ScannerCameraStatus.ready ||
+        cameraState.status == ScannerCameraStatus.busy;
+    final showScannerChrome =
+        isReady ||
+        cameraState.status == ScannerCameraStatus.loading ||
+        cameraState.status == ScannerCameraStatus.switching;
+    final actionsLocked =
+        cameraState.status == ScannerCameraStatus.busy || _isAnalyzing;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SizedBox.expand(
         child: Stack(
           children: [
-            // Camera preview
-            if (_cameraUnavailable)
-              _CameraUnavailableFallback(onPickGallery: _pickFromGallery)
-            else if (_cameraController != null &&
-                _cameraController!.value.isInitialized)
-              Positioned.fill(
-                child: Builder(
-                  builder: (context) {
-                    final size = MediaQuery.of(context).size;
-                    final deviceRatio = size.width / size.height;
-                    final isLandscape =
-                        MediaQuery.of(context).orientation ==
-                        Orientation.landscape;
-                    final previewRatio = isLandscape
-                        ? _cameraController!.value.aspectRatio
-                        : (1 / _cameraController!.value.aspectRatio);
-
-                    double previewWidth;
-                    double previewHeight;
-
-                    if (previewRatio > deviceRatio) {
-                      // Màn hình hẹp hơn so với camera (ví dụ điện thoại dọc)
-                      previewHeight = size.height;
-                      previewWidth = size.height * previewRatio;
-                    } else {
-                      // Màn hình rộng hơn so với camera (ví dụ Web ngang)
-                      previewWidth = size.width;
-                      previewHeight = size.width / previewRatio;
-                    }
-
-                    return ClipRect(
-                      child: OverflowBox(
-                        maxWidth: previewWidth,
-                        maxHeight: previewHeight,
-                        minWidth: previewWidth,
-                        minHeight: previewHeight,
-                        child: SizedBox(
-                          width: previewWidth,
-                          height: previewHeight,
-                          child: CameraPreview(_cameraController!),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              )
-            else
-              const Center(
-                child: CircularProgressIndicator(color: AppTheme.primary),
-              ),
-
-            // Scan frame overlay
-            const Positioned.fill(child: ScanFrameOverlay()),
-
-            // Top bar
+            _CameraSurface(
+              state: cameraState,
+              isWeb: _cameraSession.isWeb,
+              onRetry: _cameraSession.retry,
+              onCaptureRear: _captureWithRearCamera,
+              onPickGallery: _pickFromGallery,
+              onOpenSettings: _cameraSession.openAppSettings,
+            ),
+            if (showScannerChrome)
+              const Positioned.fill(child: ScanFrameOverlay()),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -370,7 +306,6 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
                 ),
                 child: Row(
                   children: [
-                    // Back button
                     _IconButton(
                       icon: Icons.arrow_back_ios_new_rounded,
                       onTap: () => context.pop(),
@@ -385,86 +320,87 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
                       ),
                     ),
                     const Spacer(),
-                    // Flash toggle
-                    _IconButton(
-                      icon: _flashOn ? Icons.flash_on : Icons.flash_off,
-                      onTap: _toggleFlash,
-                      active: _flashOn,
-                    ),
+                    if (_cameraSession.canUseFlash)
+                      _IconButton(
+                        icon: cameraState.flashEnabled
+                            ? Icons.flash_on
+                            : Icons.flash_off,
+                        onTap: _toggleFlash,
+                        active: cameraState.flashEnabled,
+                      )
+                    else
+                      const SizedBox(width: 40),
                   ],
                 ),
               ),
             ),
-
-            // Tip text (center bottom of frame)
-            Positioned(
-              bottom: 160,
-              left: 0,
-              right: 0,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                child: Text(
-                  _currentTip,
-                  key: ValueKey(_currentTip),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+            if (isReady)
+              Positioned(
+                bottom: 160,
+                left: 0,
+                right: 0,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: Text(
+                    _currentTip,
+                    key: ValueKey(_currentTip),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+                    ),
                   ),
                 ),
               ),
-            ),
-
-            // Bottom action bar
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                top: false,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 24,
-                    horizontal: 40,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.8),
+            if (isReady)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 24,
+                      horizontal: 40,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.8),
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _ActionButton(
+                          icon: Icons.photo_library_outlined,
+                          label: 'Thư viện',
+                          onTap: actionsLocked ? null : _pickFromGallery,
+                        ),
+                        CaptureButton(
+                          onTap: _captureImage,
+                          isProcessing:
+                              cameraState.status == ScannerCameraStatus.busy ||
+                              _isAnalyzing,
+                        ),
+                        _ActionButton(
+                          icon: Icons.flip_camera_ios_outlined,
+                          label: 'Đổi camera',
+                          onTap: !actionsLocked && _cameraSession.canSwitchLens
+                              ? _switchCamera
+                              : null,
+                        ),
                       ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Gallery picker
-                      _ActionButton(
-                        icon: Icons.photo_library_outlined,
-                        label: 'Thư viện',
-                        onTap: _pickFromGallery,
-                      ),
-
-                      // Main capture button
-                      CaptureButton(
-                        onTap: _captureImage,
-                        isProcessing: _isCapturing,
-                      ),
-
-                      // Switch camera
-                      _ActionButton(
-                        icon: Icons.flip_camera_ios_outlined,
-                        label: 'Đổi camera',
-                        onTap: _switchCamera,
-                      ),
-                    ],
-                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -472,18 +408,107 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
   }
 }
 
-// ─── Helper widgets ───────────────────────────────────────────────────────────
+class _CameraSurface extends StatelessWidget {
+  const _CameraSurface({
+    required this.state,
+    required this.isWeb,
+    required this.onRetry,
+    required this.onCaptureRear,
+    required this.onPickGallery,
+    required this.onOpenSettings,
+  });
+
+  final ScannerCameraState state;
+  final bool isWeb;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onCaptureRear;
+  final Future<void> Function() onPickGallery;
+  final Future<bool> Function() onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = state.controller;
+    if (controller != null &&
+        (state.status == ScannerCameraStatus.ready ||
+            state.status == ScannerCameraStatus.busy)) {
+      return Positioned.fill(
+        key: const ValueKey('camera-preview-shell'),
+        child: Builder(
+          builder: (context) {
+            final size = MediaQuery.of(context).size;
+            final deviceRatio = size.width / size.height;
+            final isLandscape =
+                MediaQuery.of(context).orientation == Orientation.landscape;
+            final previewRatio = isLandscape
+                ? controller.aspectRatio
+                : (1 / controller.aspectRatio);
+
+            final previewWidth = previewRatio > deviceRatio
+                ? size.height * previewRatio
+                : size.width;
+            final previewHeight = previewRatio > deviceRatio
+                ? size.height
+                : size.width / previewRatio;
+
+            return ClipRect(
+              child: OverflowBox(
+                maxWidth: previewWidth,
+                maxHeight: previewHeight,
+                minWidth: previewWidth,
+                minHeight: previewHeight,
+                child: SizedBox(
+                  width: previewWidth,
+                  height: previewHeight,
+                  child: controller.buildPreview(),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    if (state.status == ScannerCameraStatus.loading ||
+        state.status == ScannerCameraStatus.switching) {
+      return Center(
+        key: const ValueKey('camera-loading'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: AppTheme.primary),
+            const SizedBox(height: 16),
+            Text(
+              state.status == ScannerCameraStatus.switching
+                  ? 'Đang đổi camera...'
+                  : 'Đang mở camera sau...',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _CameraUnavailableFallback(
+      state: state,
+      isWeb: isWeb,
+      onRetry: onRetry,
+      onCaptureRear: onCaptureRear,
+      onPickGallery: onPickGallery,
+      onOpenSettings: onOpenSettings,
+    );
+  }
+}
 
 class _IconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool active;
-
   const _IconButton({
     required this.icon,
     required this.onTap,
     this.active = false,
   });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -506,42 +531,46 @@ class _IconButton extends StatelessWidget {
 }
 
 class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
   const _ActionButton({
     required this.icon,
     required this.label,
     required this.onTap,
   });
 
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.35,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -555,12 +584,12 @@ class _AnalyzingOverlay extends StatelessWidget {
     return Dialog(
       backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: const Padding(
+        padding: EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(
+            SizedBox(
               width: 56,
               height: 56,
               child: CircularProgressIndicator(
@@ -568,8 +597,8 @@ class _AnalyzingOverlay extends StatelessWidget {
                 valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
+            SizedBox(height: 20),
+            Text(
               'Đang nhận diện thức ăn...',
               style: TextStyle(
                 color: AppTheme.onBackground,
@@ -577,8 +606,8 @@ class _AnalyzingOverlay extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
+            SizedBox(height: 8),
+            Text(
               'AI đang phân tích ảnh của bạn',
               style: TextStyle(color: AppTheme.onSurface, fontSize: 13),
             ),
@@ -590,41 +619,125 @@ class _AnalyzingOverlay extends StatelessWidget {
 }
 
 class _CameraUnavailableFallback extends StatelessWidget {
-  final VoidCallback onPickGallery;
-  const _CameraUnavailableFallback({required this.onPickGallery});
+  const _CameraUnavailableFallback({
+    required this.state,
+    required this.isWeb,
+    required this.onRetry,
+    required this.onCaptureRear,
+    required this.onPickGallery,
+    required this.onOpenSettings,
+  });
+
+  final ScannerCameraState state;
+  final bool isWeb;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onCaptureRear;
+  final Future<void> Function() onPickGallery;
+  final Future<bool> Function() onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
+    final failure = state.failure?.kind;
+    final permanent =
+        state.status == ScannerCameraStatus.permissionDeniedPermanently;
+    final permissionDenied =
+        state.status == ScannerCameraStatus.permissionDenied || permanent;
+
+    final title = switch (failure) {
+      ScannerCameraFailureKind.permissionDenied => 'Quyền camera bị từ chối',
+      ScannerCameraFailureKind.permissionDeniedPermanently =>
+        'Quyền camera đã bị chặn',
+      ScannerCameraFailureKind.noCamera => 'Không tìm thấy camera',
+      ScannerCameraFailureKind.cameraInUse => 'Camera đang được sử dụng',
+      ScannerCameraFailureKind.notReadable => 'Camera không thể đọc được',
+      ScannerCameraFailureKind.unsupported =>
+        'Thiết bị hoặc trình duyệt chưa hỗ trợ',
+      ScannerCameraFailureKind.initializationFailed ||
+      null => 'Camera không khả dụng',
+    };
+
+    final instructions = permissionDenied && isWeb
+        ? 'Hãy mở cài đặt trang web của trình duyệt, cho phép quyền Camera rồi nhấn Thử lại.'
+        : switch (failure) {
+            ScannerCameraFailureKind.permissionDenied =>
+              'Ứng dụng cần quyền camera để quét thức ăn. Hãy cấp quyền rồi thử lại.',
+            ScannerCameraFailureKind.permissionDeniedPermanently =>
+              'Hãy mở cài đặt ứng dụng và bật lại quyền Camera.',
+            ScannerCameraFailureKind.noCamera =>
+              'Không có camera phù hợp. Bạn vẫn có thể chụp nhanh hoặc chọn ảnh có sẵn.',
+            ScannerCameraFailureKind.cameraInUse =>
+              'Hãy đóng ứng dụng hoặc tab khác đang dùng camera rồi thử lại.',
+            ScannerCameraFailureKind.notReadable =>
+              'Camera đang bận hoặc không thể đọc luồng hình ảnh. Hãy thử lại sau khi đóng ứng dụng khác.',
+            ScannerCameraFailureKind.unsupported =>
+              'Camera trực tiếp không hoạt động trong môi trường này. Hãy dùng tùy chọn chụp nhanh hoặc thư viện.',
+            ScannerCameraFailureKind.initializationFailed || null =>
+              'Không thể khởi tạo camera. Bạn có thể thử lại hoặc dùng ảnh có sẵn.',
+          };
+
+    final stateKey = permanent
+        ? 'camera-permission-permanent'
+        : state.status == ScannerCameraStatus.permissionDenied
+        ? 'camera-permission-denied'
+        : 'camera-failure-content';
+
     return Container(
+      key: const ValueKey('camera-fallback'),
       color: AppTheme.background,
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(32, 96, 32, 32),
           child: Column(
+            key: ValueKey(stateKey),
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text('📷', style: TextStyle(fontSize: 64)),
               const SizedBox(height: 16),
-              const Text(
-                'Camera không khả dụng',
-                style: TextStyle(
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
                   color: AppTheme.onBackground,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Trên web, camera cần quyền từ trình duyệt.\nHãy chọn ảnh từ thư viện để thử nghiệm.',
+              Text(
+                instructions,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.onSurface, fontSize: 14),
+                style: const TextStyle(color: AppTheme.onSurface, fontSize: 14),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: onPickGallery,
+                key: const ValueKey('camera-retry'),
+                onPressed: () => unawaited(onRetry()),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Thử lại'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const ValueKey('camera-rear-fallback'),
+                onPressed: () => unawaited(onCaptureRear()),
+                icon: const Icon(Icons.camera_alt_rounded),
+                label: const Text('Chụp bằng camera sau'),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                key: const ValueKey('camera-gallery-fallback'),
+                onPressed: () => unawaited(onPickGallery()),
                 icon: const Icon(Icons.photo_library_rounded),
                 label: const Text('Chọn ảnh từ thư viện'),
               ),
+              if (permanent && !isWeb) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  key: const ValueKey('camera-open-settings'),
+                  onPressed: () => unawaited(onOpenSettings()),
+                  icon: const Icon(Icons.settings_rounded),
+                  label: const Text('Mở cài đặt'),
+                ),
+              ],
             ],
           ),
         ),
