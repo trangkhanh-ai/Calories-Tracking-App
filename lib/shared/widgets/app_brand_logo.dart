@@ -12,6 +12,7 @@ class AppBrandLogo extends StatelessWidget {
     return Semantics(
       label: 'CalTrack logo',
       image: true,
+      excludeSemantics: true,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

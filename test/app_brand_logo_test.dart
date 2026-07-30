@@ -21,10 +21,7 @@ void main() {
     await _pumpAuthApp(tester, initialLocation: '/login');
     await tester.pumpAndSettle();
 
-    expect(
-      find.bySemanticsLabel(RegExp(r'^CalTrack logo(?:\n|$)')),
-      findsOneWidget,
-    );
+    expect(find.bySemanticsLabel('CalTrack logo'), findsOneWidget);
     expect(find.text('Đăng Nhập'), findsOneWidget);
     expect(find.text('Tên đăng nhập'), findsOneWidget);
     expect(find.text('Mật khẩu'), findsOneWidget);
@@ -41,10 +38,7 @@ void main() {
     await _pumpAuthApp(tester, initialLocation: '/register');
     await tester.pumpAndSettle();
 
-    expect(
-      find.bySemanticsLabel(RegExp(r'^CalTrack logo(?:\n|$)')),
-      findsOneWidget,
-    );
+    expect(find.bySemanticsLabel('CalTrack logo'), findsOneWidget);
     expect(find.text('Đăng Ký'), findsOneWidget);
     expect(find.text('Tên đăng nhập'), findsOneWidget);
     expect(find.text('Email'), findsOneWidget);
