@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../shared/widgets/app_brand_logo.dart';
 import '../../profile/services/profile_api_service.dart';
 import '../providers/auth_provider.dart';
 
@@ -129,6 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const AppBrandLogo(size: 64),
                   const Text(
                     'Đăng Nhập',
                     style: TextStyle(
@@ -138,7 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
                   // ─── Ô Username + Popup gợi ý ─────────────────────────
                   Column(
