@@ -21,6 +21,50 @@ from PIL import Image, __version__ as PILLOW_VERSION
 ROOT = Path(__file__).resolve().parents[1]
 SVG_PATH = ROOT / "docs/assets/branding/caltrack-mark.svg"
 IOS_CATALOG = ROOT / "ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json"
+IOS_APP_ICON_DIRECTORY = "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+IOS_APP_ICON_FILENAMES = frozenset(
+    {
+        "Icon-App-20x20@1x.png",
+        "Icon-App-20x20@2x.png",
+        "Icon-App-20x20@3x.png",
+        "Icon-App-29x29@1x.png",
+        "Icon-App-29x29@2x.png",
+        "Icon-App-29x29@3x.png",
+        "Icon-App-40x40@1x.png",
+        "Icon-App-40x40@2x.png",
+        "Icon-App-40x40@3x.png",
+        "Icon-App-60x60@2x.png",
+        "Icon-App-60x60@3x.png",
+        "Icon-App-76x76@1x.png",
+        "Icon-App-76x76@2x.png",
+        "Icon-App-83.5x83.5@2x.png",
+        "Icon-App-1024x1024@1x.png",
+    }
+)
+OUTPUT_ALLOWLIST = frozenset(
+    {
+        "assets/branding/caltrack-mark.png",
+        "assets/branding/caltrack-logo.png",
+        "web/favicon.png",
+        "web/icons/favicon-16.png",
+        "web/icons/favicon-32.png",
+        "web/icons/Icon-192.png",
+        "web/icons/Icon-512.png",
+        "web/icons/Icon-maskable-192.png",
+        "web/icons/Icon-maskable-512.png",
+        "web/icons/apple-touch-icon-180.png",
+        "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+        "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+        "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+        "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+        "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+        "android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png",
+        *(
+            f"{IOS_APP_ICON_DIRECTORY}/{filename}"
+            for filename in IOS_APP_ICON_FILENAMES
+        ),
+    }
+)
 CANVAS_SIZE = 1024
 BACKGROUND = (0xF7, 0xF9, 0xFC, 0xFF)
 LANCZOS = Image.Resampling.LANCZOS
@@ -154,32 +198,101 @@ def centered_mark(
 
 
 def save_png(image: Image.Image, relative_path: str) -> None:
-    output = ROOT / relative_path
+    output = resolve_output_path(relative_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     image.save(output, format="PNG", compress_level=9, optimize=False)
+
+
+def resolve_output_path(relative_path: str) -> Path:
+    if relative_path not in OUTPUT_ALLOWLIST:
+        raise ValueError(f"Output path is not allowlisted: {relative_path!r}")
+
+    relative = Path(relative_path)
+    if relative.is_absolute() or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
+        raise ValueError(
+            f"Output path must be repository-relative: {relative_path!r}"
+        )
+
+    root = ROOT.resolve()
+    output = (root / relative).resolve()
+    try:
+        output.relative_to(root)
+    except ValueError as error:
+        raise ValueError(
+            f"Output path escapes the repository: {relative_path!r}"
+        ) from error
+    return output
 
 
 def ios_catalog_outputs() -> list[tuple[str, tuple[int, int]]]:
     catalog = json.loads(IOS_CATALOG.read_text(encoding="utf-8"))
     outputs: list[tuple[str, tuple[int, int]]] = []
-    for entry in catalog["images"]:
-        filename = entry["filename"]
-        width, height = (Decimal(value) for value in entry["size"].split("x"))
-        scale = Decimal(entry["scale"].removesuffix("x"))
+    filenames: set[str] = set()
+    dimensions: dict[str, tuple[int, int]] = {}
+    images = catalog.get("images")
+    if not isinstance(images, list):
+        raise ValueError("The iOS AppIcon catalog must contain an images list")
+
+    for index, entry in enumerate(images):
+        if not isinstance(entry, dict):
+            raise ValueError(f"AppIcon catalog entry {index} must be an object")
+        filename = entry.get("filename")
+        if not isinstance(filename, str):
+            raise ValueError(f"AppIcon catalog entry {index} has no filename")
+        if (
+            "/" in filename
+            or "\\" in filename
+            or Path(filename).name != filename
+        ):
+            raise ValueError(f"AppIcon filename has path components: {filename!r}")
+        if Path(filename).suffix != ".png":
+            raise ValueError(f"AppIcon filename must be a PNG: {filename!r}")
+        if filename not in IOS_APP_ICON_FILENAMES:
+            raise ValueError(f"Unexpected AppIcon filename: {filename!r}")
+
+        try:
+            width, height = (
+                Decimal(value) for value in entry["size"].split("x")
+            )
+            scale = Decimal(entry["scale"].removesuffix("x"))
+        except (AttributeError, KeyError, ValueError) as error:
+            raise ValueError(
+                f"Malformed AppIcon dimensions for {filename}"
+            ) from error
         pixel_width = width * scale
         pixel_height = height * scale
-        if pixel_width != pixel_width.to_integral_value() or pixel_height != pixel_height.to_integral_value():
+        if (
+            pixel_width != pixel_width.to_integral_value()
+            or pixel_height != pixel_height.to_integral_value()
+        ):
             raise ValueError(f"Non-integral AppIcon dimensions for {filename}")
+        size = (int(pixel_width), int(pixel_height))
+        previous_size = dimensions.setdefault(filename, size)
+        if previous_size != size:
+            raise ValueError(f"Conflicting AppIcon dimensions for {filename}")
+
+        relative_path = f"{IOS_APP_ICON_DIRECTORY}/{filename}"
+        resolve_output_path(relative_path)
         outputs.append(
             (
-                f"ios/Runner/Assets.xcassets/AppIcon.appiconset/{filename}",
-                (int(pixel_width), int(pixel_height)),
+                relative_path,
+                size,
             )
+        )
+        filenames.add(filename)
+
+    missing = IOS_APP_ICON_FILENAMES - filenames
+    if missing:
+        raise ValueError(
+            f"AppIcon catalog is missing approved filenames: {sorted(missing)}"
         )
     return outputs
 
 
 def main() -> None:
+    ios_outputs = ios_catalog_outputs()
     chrome = locate_chrome()
     svg = SVG_PATH.read_text(encoding="utf-8")
 
@@ -235,8 +348,8 @@ def main() -> None:
             "android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png",
         )
 
-        for path, size in ios_catalog_outputs():
-            save_png(resized(app_icon_master, size), path)
+        for path, size in ios_outputs:
+            save_png(resized(app_icon_master, size).convert("RGB"), path)
 
     print(f"Generated CalTrack brand assets with {chrome}")
     print(f"Pillow {PILLOW_VERSION}; resize filter: LANCZOS")

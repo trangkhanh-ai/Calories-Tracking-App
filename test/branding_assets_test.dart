@@ -53,6 +53,18 @@ void main() {
       }
     });
 
+    test('every iOS AppIcon uses true-color PNG encoding without alpha', () {
+      final catalogImages = _readIosAppIconCatalog();
+
+      for (final image in catalogImages) {
+        expect(
+          _pngColorType(image.path),
+          2,
+          reason: '${image.path} must use PNG color type 2 (true-color RGB)',
+        );
+      }
+    });
+
     test('maskable artwork stays inside the central 66 percent', () async {
       for (final path in <String>[
         'web/icons/Icon-maskable-192.png',
@@ -445,6 +457,22 @@ void _expectPngSignature(Uint8List bytes, String path) {
     orderedEquals(signature),
     reason: '$path does not have the strict PNG signature',
   );
+}
+
+int _pngColorType(String path) {
+  final bytes = File(path).readAsBytesSync();
+  _expectPngSignature(bytes, path);
+  expect(
+    ByteData.sublistView(bytes).getUint32(8),
+    13,
+    reason: '$path must start with a 13-byte IHDR chunk',
+  );
+  expect(
+    ascii.decode(bytes.sublist(12, 16)),
+    'IHDR',
+    reason: '$path must start with an IHDR chunk',
+  );
+  return bytes[25];
 }
 
 List<String> _readFlutterAssetEntries(String pubspec) {
