@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,8 +9,72 @@ const _appTitle = 'CalTrack — Theo dõi Calories';
 const _appDescription = 'Theo dõi calo và dinh dưỡng mỗi ngày cùng CalTrack.';
 const _androidApplicationId = 'com.example.flutter_application_1';
 const _iosBundleIdentifier = 'com.example.flutterApplication1';
+const _iosAppIconDirectory = 'ios/Runner/Assets.xcassets/AppIcon.appiconset';
+
+const requiredImages = <String, ui.Size>{
+  'web/favicon.png': ui.Size(32, 32),
+  'web/icons/favicon-16.png': ui.Size(16, 16),
+  'web/icons/favicon-32.png': ui.Size(32, 32),
+  'web/icons/Icon-192.png': ui.Size(192, 192),
+  'web/icons/Icon-512.png': ui.Size(512, 512),
+  'web/icons/Icon-maskable-192.png': ui.Size(192, 192),
+  'web/icons/Icon-maskable-512.png': ui.Size(512, 512),
+  'web/icons/apple-touch-icon-180.png': ui.Size(180, 180),
+  'assets/branding/caltrack-mark.png': ui.Size(256, 256),
+  'assets/branding/caltrack-logo.png': ui.Size(512, 512),
+  'android/app/src/main/res/mipmap-mdpi/ic_launcher.png': ui.Size(48, 48),
+  'android/app/src/main/res/mipmap-hdpi/ic_launcher.png': ui.Size(72, 72),
+  'android/app/src/main/res/mipmap-xhdpi/ic_launcher.png': ui.Size(96, 96),
+  'android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png': ui.Size(144, 144),
+  'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png': ui.Size(192, 192),
+  'android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png': ui.Size(
+    432,
+    432,
+  ),
+  '$_iosAppIconDirectory/Icon-App-1024x1024@1x.png': ui.Size(1024, 1024),
+};
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('branding PNG assets', () {
+    test('all required images decode with the expected dimensions', () async {
+      for (final entry in requiredImages.entries) {
+        await _expectValidPng(entry.key, entry.value);
+      }
+    });
+
+    test('every iOS AppIcon catalog image matches size times scale', () async {
+      final catalogImages = _readIosAppIconCatalog();
+
+      expect(catalogImages, isNotEmpty);
+      for (final entry in catalogImages.entries) {
+        await _expectValidPng(entry.key, entry.value);
+      }
+    });
+
+    test('maskable artwork stays inside the central 66 percent', () async {
+      for (final path in <String>[
+        'web/icons/Icon-maskable-192.png',
+        'web/icons/Icon-maskable-512.png',
+      ]) {
+        final image = await _expectValidPng(path, requiredImages[path]!);
+        _expectMaskableSafePadding(image, path);
+      }
+    });
+
+    test('the iOS 1024 marketing icon is fully opaque', () async {
+      const path = '$_iosAppIconDirectory/Icon-App-1024x1024@1x.png';
+      final image = await _expectValidPng(path, requiredImages[path]!);
+
+      expect(
+        _alphaValues(image.rgba).every((alpha) => alpha == 255),
+        isTrue,
+        reason: '$path must not contain transparent pixels',
+      );
+    });
+  });
+
   group('web metadata', () {
     late String indexHtml;
     late String manifestJson;
@@ -226,4 +292,143 @@ void _expectMapEntry<T>(List<Map<String, T>> values, Map<String, T> expected) {
     isTrue,
     reason: 'Missing metadata entry: $expected',
   );
+}
+
+Future<_DecodedPng> _expectValidPng(String path, ui.Size expectedSize) async {
+  expect(
+    File(path).existsSync(),
+    isTrue,
+    reason: 'Required PNG is missing: $path',
+  );
+
+  final image = await _decodePng(path);
+  expect(
+    ui.Size(image.width.toDouble(), image.height.toDouble()),
+    expectedSize,
+    reason: '$path has unexpected pixel dimensions',
+  );
+  expect(
+    _alphaValues(image.rgba).any((alpha) => alpha > 0),
+    isTrue,
+    reason: '$path is fully transparent',
+  );
+  return image;
+}
+
+Future<_DecodedPng> _decodePng(String path) async {
+  final bytes = await File(path).readAsBytes();
+  final codec = await ui.instantiateImageCodec(bytes);
+
+  try {
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+
+    try {
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      if (byteData == null) {
+        fail('Could not extract RGBA pixels from $path');
+      }
+
+      return _DecodedPng(
+        width: image.width,
+        height: image.height,
+        rgba: Uint8List.fromList(
+          byteData.buffer.asUint8List(
+            byteData.offsetInBytes,
+            byteData.lengthInBytes,
+          ),
+        ),
+      );
+    } finally {
+      image.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
+}
+
+Map<String, ui.Size> _readIosAppIconCatalog() {
+  final catalog =
+      jsonDecode(_readText('$_iosAppIconDirectory/Contents.json'))
+          as Map<String, dynamic>;
+  final images = (catalog['images'] as List<dynamic>)
+      .cast<Map<String, dynamic>>();
+
+  return <String, ui.Size>{
+    for (final image in images)
+      if (image['filename'] case final String filename)
+        '$_iosAppIconDirectory/$filename': _catalogPixelSize(image),
+  };
+}
+
+ui.Size _catalogPixelSize(Map<String, dynamic> image) {
+  final points = (image['size'] as String)
+      .split('x')
+      .map(double.parse)
+      .toList();
+  final scale = double.parse((image['scale'] as String).replaceFirst('x', ''));
+  final width = points[0] * scale;
+  final height = points[1] * scale;
+
+  expect(width, width.roundToDouble(), reason: 'Non-integral AppIcon width');
+  expect(height, height.roundToDouble(), reason: 'Non-integral AppIcon height');
+  return ui.Size(width, height);
+}
+
+Iterable<int> _alphaValues(Uint8List rgba) sync* {
+  for (var offset = 3; offset < rgba.length; offset += 4) {
+    yield rgba[offset];
+  }
+}
+
+void _expectMaskableSafePadding(_DecodedPng image, String path) {
+  int? minX;
+  int? minY;
+  int? maxX;
+  int? maxY;
+
+  for (var y = 0; y < image.height; y++) {
+    for (var x = 0; x < image.width; x++) {
+      final offset = (y * image.width + x) * 4;
+      final isBackground =
+          image.rgba[offset] == 0xF7 &&
+          image.rgba[offset + 1] == 0xF9 &&
+          image.rgba[offset + 2] == 0xFC &&
+          image.rgba[offset + 3] == 0xFF;
+      if (isBackground) {
+        continue;
+      }
+
+      minX = minX == null || x < minX ? x : minX;
+      minY = minY == null || y < minY ? y : minY;
+      maxX = maxX == null || x > maxX ? x : maxX;
+      maxY = maxY == null || y > maxY ? y : maxY;
+    }
+  }
+
+  expect(minX, isNotNull, reason: '$path contains no artwork');
+  expect(minY, isNotNull, reason: '$path contains no artwork');
+  expect(maxX, isNotNull, reason: '$path contains no artwork');
+  expect(maxY, isNotNull, reason: '$path contains no artwork');
+
+  const safeStart = 0.17;
+  const safeEnd = 0.83;
+  expect(minX! / image.width, greaterThanOrEqualTo(safeStart), reason: path);
+  expect(minY! / image.height, greaterThanOrEqualTo(safeStart), reason: path);
+  expect((maxX! + 1) / image.width, lessThanOrEqualTo(safeEnd), reason: path);
+  expect((maxY! + 1) / image.height, lessThanOrEqualTo(safeEnd), reason: path);
+}
+
+final class _DecodedPng {
+  const _DecodedPng({
+    required this.width,
+    required this.height,
+    required this.rgba,
+  });
+
+  final int width;
+  final int height;
+  final Uint8List rgba;
 }
