@@ -48,8 +48,8 @@ void main() {
       final catalogImages = _readIosAppIconCatalog();
 
       expect(catalogImages, isNotEmpty);
-      for (final entry in catalogImages.entries) {
-        await _expectValidPng(entry.key, entry.value);
+      for (final image in catalogImages) {
+        await _expectValidPng(image.path, image.expectedSize);
       }
     });
 
@@ -207,9 +207,31 @@ void main() {
 
   test('pubspec declares both in-app branding assets', () {
     final pubspec = _readText('pubspec.yaml');
+    final assets = _readFlutterAssetEntries(pubspec);
 
-    expect(pubspec, contains('- assets/branding/caltrack-mark.png'));
-    expect(pubspec, contains('- assets/branding/caltrack-logo.png'));
+    expect(
+      assets,
+      containsAll(<String>[
+        'assets/branding/caltrack-mark.png',
+        'assets/branding/caltrack-logo.png',
+      ]),
+    );
+  });
+
+  test('pubspec asset parser ignores comments and unrelated occurrences', () {
+    const misleadingPubspec = '''
+description: assets/branding/caltrack-logo.png
+# flutter:
+#   assets:
+#     - assets/branding/caltrack-mark.png
+flutter:
+  configuration:
+    assets:
+      - assets/branding/caltrack-logo.png
+  uses-material-design: true
+''';
+
+    expect(_readFlutterAssetEntries(misleadingPubspec), isEmpty);
   });
 
   group('Android metadata', () {
@@ -317,6 +339,7 @@ Future<_DecodedPng> _expectValidPng(String path, ui.Size expectedSize) async {
 
 Future<_DecodedPng> _decodePng(String path) async {
   final bytes = await File(path).readAsBytes();
+  _expectPngSignature(bytes, path);
   final codec = await ui.instantiateImageCodec(bytes);
 
   try {
@@ -349,32 +372,168 @@ Future<_DecodedPng> _decodePng(String path) async {
   }
 }
 
-Map<String, ui.Size> _readIosAppIconCatalog() {
+List<_CatalogImageExpectation> _readIosAppIconCatalog() {
   final catalog =
       jsonDecode(_readText('$_iosAppIconDirectory/Contents.json'))
           as Map<String, dynamic>;
   final images = (catalog['images'] as List<dynamic>)
       .cast<Map<String, dynamic>>();
 
-  return <String, ui.Size>{
-    for (final image in images)
-      if (image['filename'] case final String filename)
-        '$_iosAppIconDirectory/$filename': _catalogPixelSize(image),
-  };
+  return <_CatalogImageExpectation>[
+    for (var index = 0; index < images.length; index++)
+      _catalogImageExpectation(images[index], index),
+  ];
 }
 
-ui.Size _catalogPixelSize(Map<String, dynamic> image) {
-  final points = (image['size'] as String)
-      .split('x')
-      .map(double.parse)
-      .toList();
-  final scale = double.parse((image['scale'] as String).replaceFirst('x', ''));
-  final width = points[0] * scale;
-  final height = points[1] * scale;
+_CatalogImageExpectation _catalogImageExpectation(
+  Map<String, dynamic> image,
+  int index,
+) {
+  final filename = image['filename'];
+  if (filename is! String || filename.trim().isEmpty) {
+    fail('AppIcon catalog image $index must have a non-empty filename');
+  }
 
-  expect(width, width.roundToDouble(), reason: 'Non-integral AppIcon width');
-  expect(height, height.roundToDouble(), reason: 'Non-integral AppIcon height');
+  return _CatalogImageExpectation(
+    path: '$_iosAppIconDirectory/$filename',
+    expectedSize: _catalogPixelSize(image, index),
+  );
+}
+
+ui.Size _catalogPixelSize(Map<String, dynamic> image, int index) {
+  final rawSize = image['size'];
+  final rawScale = image['scale'];
+  if (rawSize is! String || rawScale is! String) {
+    fail('AppIcon catalog image $index must define string size and scale');
+  }
+
+  final sizeMatch = RegExp(
+    r'^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$',
+  ).firstMatch(rawSize);
+  final scaleMatch = RegExp(r'^(\d+(?:\.\d+)?)x$').firstMatch(rawScale);
+  if (sizeMatch == null || scaleMatch == null) {
+    fail('AppIcon catalog image $index has malformed size or scale');
+  }
+
+  final width =
+      double.parse(sizeMatch.group(1)!) * double.parse(scaleMatch.group(1)!);
+  final height =
+      double.parse(sizeMatch.group(2)!) * double.parse(scaleMatch.group(1)!);
+
+  expect(
+    width,
+    width.roundToDouble(),
+    reason: 'AppIcon catalog image $index has non-integral pixel width',
+  );
+  expect(
+    height,
+    height.roundToDouble(),
+    reason: 'AppIcon catalog image $index has non-integral pixel height',
+  );
   return ui.Size(width, height);
+}
+
+void _expectPngSignature(Uint8List bytes, String path) {
+  const signature = <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+  expect(
+    bytes.length,
+    greaterThanOrEqualTo(signature.length),
+    reason: '$path is too short to be a PNG',
+  );
+  expect(
+    bytes.sublist(0, signature.length),
+    orderedEquals(signature),
+    reason: '$path does not have the strict PNG signature',
+  );
+}
+
+List<String> _readFlutterAssetEntries(String pubspec) {
+  final lines = const LineSplitter().convert(pubspec);
+  int? flutterLine;
+
+  for (var index = 0; index < lines.length; index++) {
+    final content = _uncommentedYamlLine(lines[index]);
+    if (content == null) {
+      continue;
+    }
+
+    if (_indentation(content) == 0 && content.trim() == 'flutter:') {
+      flutterLine = index;
+      break;
+    }
+  }
+
+  if (flutterLine == null) {
+    fail('pubspec.yaml must define a top-level flutter section');
+  }
+
+  final flutterSection = <({int line, int indent, String content})>[];
+  for (var index = flutterLine + 1; index < lines.length; index++) {
+    final content = _uncommentedYamlLine(lines[index]);
+    if (content == null) {
+      continue;
+    }
+
+    final indent = _indentation(content);
+    if (indent == 0) {
+      break;
+    }
+    flutterSection.add((line: index, indent: indent, content: content));
+  }
+
+  if (flutterSection.isEmpty) {
+    return const <String>[];
+  }
+
+  final directChildIndent = flutterSection
+      .map((line) => line.indent)
+      .reduce((left, right) => left < right ? left : right);
+  int? assetsLine;
+  for (final line in flutterSection) {
+    if (line.indent == directChildIndent && line.content.trim() == 'assets:') {
+      assetsLine = line.line;
+      break;
+    }
+  }
+
+  if (assetsLine == null) {
+    return const <String>[];
+  }
+
+  final assets = <String>[];
+  for (var index = assetsLine + 1; index < lines.length; index++) {
+    final content = _uncommentedYamlLine(lines[index]);
+    if (content == null) {
+      continue;
+    }
+
+    final indent = _indentation(content);
+    if (indent <= directChildIndent) {
+      break;
+    }
+
+    final trimmed = content.trim();
+    if (trimmed.startsWith('- ')) {
+      assets.add(_unquoteYamlScalar(trimmed.substring(2).trim()));
+    }
+  }
+  return assets;
+}
+
+String? _uncommentedYamlLine(String line) {
+  final withoutComment = line.split('#').first.trimRight();
+  return withoutComment.trim().isEmpty ? null : withoutComment;
+}
+
+int _indentation(String line) => line.length - line.trimLeft().length;
+
+String _unquoteYamlScalar(String value) {
+  if (value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'")))) {
+    return value.substring(1, value.length - 1);
+  }
+  return value;
 }
 
 Iterable<int> _alphaValues(Uint8List rgba) sync* {
@@ -431,4 +590,14 @@ final class _DecodedPng {
   final int width;
   final int height;
   final Uint8List rgba;
+}
+
+final class _CatalogImageExpectation {
+  const _CatalogImageExpectation({
+    required this.path,
+    required this.expectedSize,
+  });
+
+  final String path;
+  final ui.Size expectedSize;
 }
