@@ -225,8 +225,8 @@ description: assets/branding/caltrack-logo.png
 #   assets:
 #     - assets/branding/caltrack-mark.png
 flutter:
-  configuration:
-    assets:
+  assets:
+    branding:
       - assets/branding/caltrack-logo.png
   uses-material-design: true
 ''';
@@ -500,7 +500,7 @@ List<String> _readFlutterAssetEntries(String pubspec) {
     return const <String>[];
   }
 
-  final assets = <String>[];
+  final assetBlock = <({int indent, String content})>[];
   for (var index = assetsLine + 1; index < lines.length; index++) {
     final content = _uncommentedYamlLine(lines[index]);
     if (content == null) {
@@ -511,13 +511,25 @@ List<String> _readFlutterAssetEntries(String pubspec) {
     if (indent <= directChildIndent) {
       break;
     }
-
-    final trimmed = content.trim();
-    if (trimmed.startsWith('- ')) {
-      assets.add(_unquoteYamlScalar(trimmed.substring(2).trim()));
-    }
+    assetBlock.add((indent: indent, content: content));
   }
-  return assets;
+
+  if (assetBlock.isEmpty) {
+    return const <String>[];
+  }
+
+  final entryIndent = assetBlock
+      .map((line) => line.indent)
+      .reduce((left, right) => left < right ? left : right);
+  final directEntries = assetBlock.where((line) => line.indent == entryIndent);
+  if (directEntries.any((line) => !line.content.trim().startsWith('- '))) {
+    return const <String>[];
+  }
+
+  return directEntries
+      .map((line) => line.content.trim().substring(2).trim())
+      .map(_unquoteYamlScalar)
+      .toList();
 }
 
 String? _uncommentedYamlLine(String line) {
