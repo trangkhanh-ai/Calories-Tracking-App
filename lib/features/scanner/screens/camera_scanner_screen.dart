@@ -11,6 +11,7 @@ import '../services/scanner_camera_service.dart';
 import '../services/scanner_image_source.dart';
 import '../widgets/capture_button.dart';
 import '../widgets/scan_frame_overlay.dart';
+import '../widgets/scanner_camera_viewport.dart';
 
 class CameraScannerScreen extends ConsumerStatefulWidget {
   const CameraScannerScreen({super.key, this.cameraSession, this.imageSource});
@@ -276,8 +277,7 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
     final isReady =
         cameraState.status == ScannerCameraStatus.ready ||
         cameraState.status == ScannerCameraStatus.busy;
-    final showScannerChrome =
-        isReady ||
+    final showScannerOverlay =
         cameraState.status == ScannerCameraStatus.loading ||
         cameraState.status == ScannerCameraStatus.switching;
     final actionsLocked =
@@ -296,7 +296,7 @@ class _CameraScannerScreenState extends ConsumerState<CameraScannerScreen>
               onPickGallery: _pickFromGallery,
               onOpenSettings: _cameraSession.openAppSettings,
             ),
-            if (showScannerChrome)
+            if (showScannerOverlay)
               const Positioned.fill(child: ScanFrameOverlay()),
             SafeArea(
               child: Padding(
@@ -433,38 +433,7 @@ class _CameraSurface extends StatelessWidget {
             state.status == ScannerCameraStatus.busy)) {
       return Positioned.fill(
         key: const ValueKey('camera-preview-shell'),
-        child: Builder(
-          builder: (context) {
-            final size = MediaQuery.of(context).size;
-            final deviceRatio = size.width / size.height;
-            final isLandscape =
-                MediaQuery.of(context).orientation == Orientation.landscape;
-            final previewRatio = isLandscape
-                ? controller.aspectRatio
-                : (1 / controller.aspectRatio);
-
-            final previewWidth = previewRatio > deviceRatio
-                ? size.height * previewRatio
-                : size.width;
-            final previewHeight = previewRatio > deviceRatio
-                ? size.height
-                : size.width / previewRatio;
-
-            return ClipRect(
-              child: OverflowBox(
-                maxWidth: previewWidth,
-                maxHeight: previewHeight,
-                minWidth: previewWidth,
-                minHeight: previewHeight,
-                child: SizedBox(
-                  width: previewWidth,
-                  height: previewHeight,
-                  child: controller.buildPreview(),
-                ),
-              ),
-            );
-          },
-        ),
+        child: ScannerCameraViewport(controller: controller, isWeb: isWeb),
       );
     }
 
