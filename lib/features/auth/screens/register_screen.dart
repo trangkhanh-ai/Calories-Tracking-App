@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../shared/widgets/app_brand_logo.dart';
 import '../providers/auth_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -65,6 +66,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const AppBrandLogo(size: 64),
                 const Text(
                   'Đăng Ký',
                   style: TextStyle(
@@ -74,7 +76,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
                 TextField(
                   controller: _usernameController,
                   decoration: InputDecoration(

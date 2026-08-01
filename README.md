@@ -51,6 +51,7 @@ Calories Tracking App giúp bạn theo dõi năng lượng và dinh dưỡng the
 | Tìm kiếm thực phẩm USDA | Đã triển khai |
 | Nhật ký bữa ăn server-first | Đã triển khai; backend là source of truth |
 | Thống kê bảy ngày | Đã triển khai |
+| CalTrack Coach gợi ý bữa ăn theo calo còn lại | Đã triển khai ở Flutter client; không phải tư vấn y khoa |
 | Rate limiting | Đã triển khai cho các endpoint nhạy cảm |
 | Health checks và production deployment | Đã cấu hình cho Render/Vercel/Neon |
 

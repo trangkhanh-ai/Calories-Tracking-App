@@ -25,6 +25,8 @@ Repeat these checks for every applicable target in the matrix.
 - [ ] Switch between front and rear cameras at least **five consecutive times**. Confirm each switch selects the requested camera, keeps a live preview, and does not freeze, crash, or leave duplicate camera sessions.
 - [ ] Start with the rear camera. If normal rear-camera startup fails, confirm the rear-camera fallback opens a one-shot capture flow and the UI remains responsive afterward.
 - [ ] When live camera capture is unavailable, confirm the gallery/file fallback is offered and a supported image can be selected.
+- [ ] Rotate or resize the web viewport between portrait and landscape. Confirm the preview remains centered, stays inside the viewport without overflow, and keeps the guide overlay aligned with the visible camera frame.
+- [ ] On mobile web, confirm the camera uses contain-style framing with no unintended crop. On the Android APK, confirm the native preview keeps its documented cover-style framing and the overlay remains aligned.
 - [ ] Capture a food image and submit it to Gemini analysis. Confirm loading, success, and error states are understandable and no duplicate submission occurs.
 - [ ] Return from the Gemini result to the camera flow, then capture and analyze another image. Confirm the preview restarts and the second capture succeeds without reloading the app.
 - [ ] Background and reopen the browser, PWA, or APK during the camera flow. Confirm the camera resumes or offers a clear retry path without retaining a stale session.

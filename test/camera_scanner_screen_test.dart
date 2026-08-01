@@ -10,6 +10,7 @@ import 'package:flutter_application_1/features/scanner/services/scanner_camera_s
 import 'package:flutter_application_1/features/scanner/services/scanner_image_source.dart';
 import 'package:flutter_application_1/features/scanner/services/gemini_vision_service.dart';
 import 'package:flutter_application_1/features/scanner/widgets/capture_button.dart';
+import 'package:flutter_application_1/features/scanner/widgets/scan_frame_overlay.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -69,7 +70,7 @@ class _FakeController implements ScannerCameraController {
   bool disposed = false;
 
   @override
-  double get aspectRatio => 4 / 3;
+  double aspectRatio = 4 / 3;
 
   @override
   Widget buildPreview() =>
@@ -153,6 +154,20 @@ Future<void> _pumpCameraFrames(WidgetTester tester) async {
   }
 }
 
+void _setPortraitViewport(WidgetTester tester) {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(390, 844);
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+void _expectRectClose(Rect actual, Rect expected, {double tolerance = 0.01}) {
+  expect(actual.left, closeTo(expected.left, tolerance));
+  expect(actual.top, closeTo(expected.top, tolerance));
+  expect(actual.width, closeTo(expected.width, tolerance));
+  expect(actual.height, closeTo(expected.height, tolerance));
+}
+
 void main() {
   testWidgets('shows a loading shell while camera initializes', (tester) async {
     final gate = Completer<void>();
@@ -182,6 +197,129 @@ void main() {
 
     expect(find.byKey(const ValueKey('camera-preview-shell')), findsOneWidget);
     expect(find.byKey(const ValueKey('fake-preview')), findsOneWidget);
+  });
+
+  testWidgets('web ready preview is contained and centered without overflow', (
+    tester,
+  ) async {
+    _setPortraitViewport(tester);
+    final platform = _FakePlatform(
+      cameras: [_camera('back', CameraLensDirection.back)],
+      web: true,
+    );
+    final imageSource = _FakeImageSource();
+
+    await _pumpScreen(tester, platform: platform, imageSource: imageSource);
+    await _pumpCameraFrames(tester);
+
+    final shellFinder = find.byKey(const ValueKey('camera-preview-shell'));
+    final previewFinder = find.byKey(const ValueKey('camera-preview-geometry'));
+    final shellRect = tester.getRect(shellFinder);
+    final previewRect = tester.getRect(previewFinder);
+
+    expect(shellRect, const Rect.fromLTWH(0, 0, 390, 844));
+    expect(previewRect.left, greaterThanOrEqualTo(shellRect.left - 0.01));
+    expect(previewRect.top, greaterThanOrEqualTo(shellRect.top - 0.01));
+    expect(previewRect.right, lessThanOrEqualTo(shellRect.right + 0.01));
+    expect(previewRect.bottom, lessThanOrEqualTo(shellRect.bottom + 0.01));
+    expect(previewRect.center.dx, closeTo(shellRect.center.dx, 0.01));
+    expect(previewRect.center.dy, closeTo(shellRect.center.dy, 0.01));
+    expect(previewRect.width / previewRect.height, closeTo(3 / 4, 0.001));
+    expect(
+      find.descendant(of: shellFinder, matching: find.byType(OverflowBox)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('web ready overlay matches the contained preview', (
+    tester,
+  ) async {
+    _setPortraitViewport(tester);
+    final platform = _FakePlatform(
+      cameras: [_camera('back', CameraLensDirection.back)],
+      web: true,
+    );
+    final imageSource = _FakeImageSource();
+
+    await _pumpScreen(tester, platform: platform, imageSource: imageSource);
+    await _pumpCameraFrames(tester);
+
+    final previewRect = tester.getRect(
+      find.byKey(const ValueKey('camera-preview-geometry')),
+    );
+    final overlayRect = tester.getRect(
+      find.byKey(const ValueKey('camera-overlay-geometry')),
+    );
+
+    _expectRectClose(overlayRect, previewRect);
+    expect(find.byType(ScanFrameOverlay), findsOneWidget);
+  });
+
+  testWidgets(
+    'native ready preview covers the viewport and clips its overlay',
+    (tester) async {
+      _setPortraitViewport(tester);
+      final platform = _FakePlatform(
+        cameras: [_camera('back', CameraLensDirection.back)],
+      );
+      final imageSource = _FakeImageSource();
+
+      await _pumpScreen(tester, platform: platform, imageSource: imageSource);
+      await _pumpCameraFrames(tester);
+
+      final shellRect = tester.getRect(
+        find.byKey(const ValueKey('camera-preview-shell')),
+      );
+      final previewRect = tester.getRect(
+        find.byKey(const ValueKey('camera-preview-geometry')),
+      );
+      final overlayRect = tester.getRect(
+        find.byKey(const ValueKey('camera-overlay-geometry')),
+      );
+
+      expect(previewRect.width / previewRect.height, closeTo(3 / 4, 0.001));
+      expect(
+        previewRect.width > shellRect.width ||
+            previewRect.height > shellRect.height,
+        isTrue,
+      );
+      expect(previewRect.center.dx, closeTo(shellRect.center.dx, 0.01));
+      expect(previewRect.center.dy, closeTo(shellRect.center.dy, 0.01));
+      _expectRectClose(overlayRect, shellRect);
+      expect(
+        find.byKey(const ValueKey('camera-preview-shell')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('fake-preview')), findsOneWidget);
+      expect(find.byType(CaptureButton), findsOneWidget);
+    },
+  );
+
+  testWidgets('layout rebuild keeps the initialized camera controller', (
+    tester,
+  ) async {
+    _setPortraitViewport(tester);
+    final platform = _FakePlatform(
+      cameras: [_camera('back', CameraLensDirection.back)],
+      web: true,
+    );
+    final imageSource = _FakeImageSource();
+
+    await _pumpScreen(tester, platform: platform, imageSource: imageSource);
+    await _pumpCameraFrames(tester);
+
+    tester.view.physicalSize = const Size(844, 390);
+    await tester.pump();
+
+    expect(
+      tester.getRect(find.byKey(const ValueKey('camera-preview-shell'))),
+      const Rect.fromLTWH(0, 0, 844, 390),
+    );
+    expect(platform.controllers, hasLength(1));
+    expect(
+      platform.controllers.where((controller) => !controller.disposed),
+      hasLength(1),
+    );
   });
 
   testWidgets('permission denied state offers retry and gallery recovery', (

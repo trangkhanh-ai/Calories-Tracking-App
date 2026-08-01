@@ -1,5 +1,31 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_application_1/core/network/api_client.dart';
 import 'package:flutter_application_1/features/food_search/services/food_search_service.dart';
+
+class _JsonAdapter implements HttpClientAdapter {
+  _JsonAdapter(this.body);
+
+  final String body;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      body,
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
 
 void main() {
   group('FoodSearchService', () {
@@ -45,5 +71,17 @@ void main() {
         expect(results.first.calories, lessThanOrEqualTo(500));
       },
     );
+
+    test('falls back when the API returns an empty catalog', () async {
+      final previousAdapter = apiClient.httpClientAdapter;
+      apiClient.httpClientAdapter = _JsonAdapter('[]');
+      addTearDown(() => apiClient.httpClientAdapter = previousAdapter);
+      final service = FoodSearchService();
+
+      final results = await service.searchFoods('');
+
+      expect(results, isNotEmpty);
+      expect(results.any((food) => food.name == 'Pho Bo'), isTrue);
+    });
   });
 }

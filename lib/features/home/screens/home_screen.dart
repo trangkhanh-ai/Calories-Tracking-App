@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../coach/providers/coach_provider.dart';
+import '../../coach/widgets/coach_suggestion_card.dart';
 import '../../diary/providers/diary_provider.dart';
 import '../../profile/providers/profile_provider.dart';
 import '../../diary/models/diary_dto.dart';
@@ -16,6 +18,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final diaryAsync = ref.watch(dailyDiaryProvider);
     final profileAsync = ref.watch(profileProvider);
+    final coachAsync = ref.watch(coachRecommendationProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -35,7 +38,9 @@ class HomeScreen extends ConsumerWidget {
           if (dailyData == null) {
             return _DiaryErrorView(
               message: diaryState.message ?? 'Chưa có dữ liệu nhật ký.',
-              onRetry: diaryState.canRetry ? () => ref.invalidate(dailyDiaryProvider) : null,
+              onRetry: diaryState.canRetry
+                  ? () => ref.invalidate(dailyDiaryProvider)
+                  : null,
             );
           }
 
@@ -188,6 +193,12 @@ class HomeScreen extends ConsumerWidget {
                         .slideY(begin: 0.1, end: 0),
                     const SizedBox(height: 20),
 
+                    CoachSuggestionCard(
+                      state: coachAsync,
+                      onOpenSearch: () => context.pushNamed('food-search'),
+                    ).animate().fadeIn(duration: 400.ms, delay: 75.ms),
+                    const SizedBox(height: 20),
+
                     // ─── Meal Breakdown ─────────────────────────────────
                     _MealBreakdownCard(dailyData: dailyData)
                         .animate()
@@ -235,7 +246,6 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 /// Banner explaining a degraded diary read.
@@ -243,11 +253,7 @@ class HomeScreen extends ConsumerWidget {
 /// The wording distinguishes genuinely-offline from a backend fault, and only
 /// offers a retry where retrying can actually help.
 class _DiaryStatusBanner extends StatelessWidget {
-  const _DiaryStatusBanner({
-    required this.state,
-    this.onRetry,
-    this.onSignIn,
-  });
+  const _DiaryStatusBanner({required this.state, this.onRetry, this.onSignIn});
 
   final DiaryState<DailyDiaryDto> state;
   final VoidCallback? onRetry;
@@ -262,7 +268,9 @@ class _DiaryStatusBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isOffline ? AppTheme.surfaceVariant : AppTheme.error.withAlpha(20),
+        color: isOffline
+            ? AppTheme.surfaceVariant
+            : AppTheme.error.withAlpha(20),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: accent),
       ),
@@ -312,12 +320,12 @@ class _DiaryStatusBanner extends StatelessWidget {
   }
 
   static IconData _iconFor(DiaryStatus status) => switch (status) {
-        DiaryStatus.cachedOffline => Icons.cloud_off,
-        DiaryStatus.unauthorized => Icons.lock_outline,
-        DiaryStatus.timeout => Icons.timer_off_outlined,
-        DiaryStatus.rateLimited => Icons.hourglass_bottom,
-        _ => Icons.warning_amber_rounded,
-      };
+    DiaryStatus.cachedOffline => Icons.cloud_off,
+    DiaryStatus.unauthorized => Icons.lock_outline,
+    DiaryStatus.timeout => Icons.timer_off_outlined,
+    DiaryStatus.rateLimited => Icons.hourglass_bottom,
+    _ => Icons.warning_amber_rounded,
+  };
 }
 
 /// Full-screen fallback when there is neither fresh data nor a usable cache.

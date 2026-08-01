@@ -27,8 +27,20 @@ class FoodSearchService {
         final List<dynamic> data = response.data is List
             ? response.data
             : <dynamic>[];
-        _foods = data.map((json) => FoodNutritionItem.fromJson(json)).toList();
-        return;
+        final parsed = data
+            .whereType<Map<String, dynamic>>()
+            .map(FoodNutritionItem.fromJson)
+            .toList();
+        final hasUsableFood = parsed.any(
+          (food) =>
+              food.calories != null &&
+              food.calories!.isFinite &&
+              food.calories! > 0,
+        );
+        if (hasUsableFood) {
+          _foods = parsed;
+          return;
+        }
       }
     } catch (e) {
       // Ignore API failures; the service falls back to the bundled catalog.

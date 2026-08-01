@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import '../../../app/theme.dart';
 
 class ScanFrameOverlay extends StatefulWidget {
@@ -37,7 +40,8 @@ class _ScanFrameOverlayState extends State<ScanFrameOverlay>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = constraints.maxWidth * 0.72;
+        final size =
+            math.min(constraints.maxWidth, constraints.maxHeight) * 0.72;
         return Stack(
           children: [
             // Dark overlay outside frame
