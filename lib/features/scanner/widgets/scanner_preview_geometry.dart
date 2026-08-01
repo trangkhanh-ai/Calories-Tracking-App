@@ -30,7 +30,7 @@ class ScannerPreviewGeometry {
         ? (validAspectRatio > 1 ? 1 / validAspectRatio : validAspectRatio)
         : (validAspectRatio < 1 ? 1 / validAspectRatio : validAspectRatio);
 
-    if (viewport.width <= 0 || viewport.height <= 0) {
+    if (!viewport.isFinite || viewport.width <= 0 || viewport.height <= 0) {
       return ScannerPreviewGeometry(
         previewRect: Rect.zero,
         visibleRect: Rect.zero,

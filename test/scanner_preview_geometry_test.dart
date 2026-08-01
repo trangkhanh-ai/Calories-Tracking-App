@@ -180,6 +180,33 @@ void main() {
       expect(geometry.usedFallbackRatio, isFalse, reason: '$viewport');
     }
   });
+
+  test('non-finite viewport dimensions return safe zero geometry', () {
+    const cases = <(Size, double)>[
+      (Size(double.nan, 667), 4 / 3),
+      (Size(double.infinity, 667), 4 / 3),
+      (Size(375, double.nan), 4 / 3),
+      (Size(375, double.infinity), 3 / 4),
+    ];
+
+    for (final (viewport, expectedRatio) in cases) {
+      final geometry = ScannerPreviewGeometry.calculate(
+        viewport,
+        4 / 3,
+        ScannerPreviewFit.contain,
+      );
+
+      expect(geometry.previewRect, Rect.zero, reason: '$viewport');
+      expect(geometry.visibleRect, Rect.zero, reason: '$viewport');
+      expect(geometry.normalizedAspectRatio.isFinite, isTrue);
+      expect(
+        geometry.normalizedAspectRatio,
+        closeTo(expectedRatio, _tolerance),
+        reason: '$viewport',
+      );
+      expect(geometry.usedFallbackRatio, isFalse, reason: '$viewport');
+    }
+  });
 }
 
 void _expectContainedAndCentered(
