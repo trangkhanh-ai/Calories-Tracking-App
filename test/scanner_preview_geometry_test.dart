@@ -72,6 +72,21 @@ void main() {
       _expectContainedAndCentered(wide, _landscape);
     });
 
+    test('treats square viewports as landscape', () {
+      const square = Size(400, 400);
+      final geometry = ScannerPreviewGeometry.calculate(
+        square,
+        3 / 4,
+        ScannerPreviewFit.contain,
+      );
+
+      expect(geometry.normalizedAspectRatio, closeTo(4 / 3, _tolerance));
+      expect(geometry.previewRect.width, closeTo(400, _tolerance));
+      expect(geometry.previewRect.height, closeTo(300, _tolerance));
+      expect(geometry.usedFallbackRatio, isFalse);
+      _expectContainedAndCentered(geometry, square);
+    });
+
     test('never exceeds the viewport and preserves the normalized ratio', () {
       final geometry = ScannerPreviewGeometry.calculate(
         _tallPortrait,
@@ -94,6 +109,8 @@ void main() {
 
     expect(geometry.normalizedAspectRatio, closeTo(3 / 4, _tolerance));
     expect(geometry.usedFallbackRatio, isFalse);
+    expect(geometry.previewRect.width, closeTo(633, _tolerance));
+    expect(geometry.previewRect.height, closeTo(844, _tolerance));
     expect(
       geometry.previewRect.width > _tallPortrait.width ||
           geometry.previewRect.height > _tallPortrait.height,
@@ -122,6 +139,19 @@ void main() {
       expect(geometry.visibleRect.isFinite, isTrue, reason: '$rawRatio');
       _expectContainedAndCentered(geometry, _portrait);
     }
+  });
+
+  test('invalid ratio still normalizes before a zero-viewport return', () {
+    final geometry = ScannerPreviewGeometry.calculate(
+      Size.zero,
+      double.nan,
+      ScannerPreviewFit.contain,
+    );
+
+    expect(geometry.previewRect, Rect.zero);
+    expect(geometry.visibleRect, Rect.zero);
+    expect(geometry.normalizedAspectRatio, closeTo(4 / 3, _tolerance));
+    expect(geometry.usedFallbackRatio, isTrue);
   });
 
   test('non-positive viewport dimensions return zero rectangles', () {
@@ -156,12 +186,30 @@ void _expectContainedAndCentered(
   ScannerPreviewGeometry geometry,
   Size viewport,
 ) {
-  expect(geometry.previewRect.left, greaterThanOrEqualTo(0));
-  expect(geometry.previewRect.top, greaterThanOrEqualTo(0));
-  expect(geometry.previewRect.right, lessThanOrEqualTo(viewport.width));
-  expect(geometry.previewRect.bottom, lessThanOrEqualTo(viewport.height));
-  expect(geometry.previewRect.width, lessThanOrEqualTo(viewport.width));
-  expect(geometry.previewRect.height, lessThanOrEqualTo(viewport.height));
+  expect(geometry.previewRect.left, greaterThanOrEqualTo(-_tolerance));
+  expect(geometry.previewRect.top, greaterThanOrEqualTo(-_tolerance));
+  expect(
+    geometry.previewRect.right,
+    lessThanOrEqualTo(viewport.width + _tolerance),
+  );
+  expect(
+    geometry.previewRect.bottom,
+    lessThanOrEqualTo(viewport.height + _tolerance),
+  );
+  expect(
+    geometry.previewRect.width,
+    lessThanOrEqualTo(viewport.width + _tolerance),
+  );
+  expect(
+    geometry.previewRect.height,
+    lessThanOrEqualTo(viewport.height + _tolerance),
+  );
+  expect(
+    (geometry.previewRect.width - viewport.width).abs() <= _tolerance ||
+        (geometry.previewRect.height - viewport.height).abs() <= _tolerance,
+    isTrue,
+    reason: 'contain must use the largest scale that fits the viewport',
+  );
   _expectCentered(geometry.previewRect, viewport);
   _expectRatio(geometry.previewRect, geometry.normalizedAspectRatio);
   expect(geometry.visibleRect, geometry.previewRect);
